@@ -1,14 +1,13 @@
-from inception import get_inception_score
 import tensorflow as tf
 import numpy as np
 from tensorflow.python.platform import flags
 
 from data import Imagenet, Cifar10, DSprites, Mnist
-from models import ImageNet, Cifar10Net, DspritesNet, ResNet32, ResNet32Gen, ResNet32Large, ResNet32Larger, ResNet32Wider
+from models import DspritesNet, ResNet32, ResNet32Large, ResNet32Larger, ResNet32Wider
 import os.path as osp
 import os
 from baselines.logger import TensorBoardOutputFormat
-from utils import xent, average_gradients, ReplayBuffer, optimistic_restore
+from utils import average_gradients, ReplayBuffer, optimistic_restore
 from tqdm import tqdm
 import random
 from torch.utils.data import DataLoader
@@ -25,6 +24,8 @@ from hmc import hmc
 import horovod.tensorflow as hvd
 hvd.init()
 
+from inception import get_inception_score
+
 torch.manual_seed(hvd.rank())
 np.random.seed(hvd.rank())
 tf.set_random_seed(hvd.rank())
@@ -35,7 +36,7 @@ FLAGS = flags.FLAGS
 # Dataset Options
 flags.DEFINE_string('datasource', 'random',
     'initialization for chains, either random or default (decorruption)')
-flags.DEFINE_string('dataset',m'omniglot',
+flags.DEFINE_string('dataset','omniglot',
     'omniglot or imagenet or omniglotfull or cifar10 or mnist or dsprites or 2d')
 flags.DEFINE_integer('batch_size', 256, 'Size of inputs')
 flags.DEFINE_bool('single', False, 'whether to debug by training on a single image')
@@ -43,7 +44,7 @@ flags.DEFINE_integer('data_workers', 4,
     'Number of different data workers to load data in parallel')
 
 # General Experiment Settings
-flags.DEFINE_string('logdir', '/mnt/nfs/yilundu/pot_kmeans/cachedir',
+flags.DEFINE_string('logdir', '/mnt/nfs/yilundu/ebm_code_release/cachedir',
     'location where log of experiments will be stored')
 flags.DEFINE_string('exp', 'default', 'name of experiments')
 flags.DEFINE_integer('log_interval', 10, 'log outputs every so many batches')
@@ -60,9 +61,9 @@ flags.DEFINE_float('ml_coeff', 1.0, 'Maximum Likelihood Coefficients')
 flags.DEFINE_bool('cclass', False, 'Whether to conditional training in models')
 flags.DEFINE_bool('model_cclass', False,'use unsupervised clustering to infer fake labels')
 flags.DEFINE_integer('temperature', 1, 'Temperature for energy function')
-flags.DEFINE_string('objective', 'cd', 'use either contrastive divergence objective(least stable),
-                    logsumexp(more stable)
-                    softplus(most stable)')
+flags.DEFINE_string('objective', 'cd', 'use either contrastive divergence objective(least stable),'
+                    'logsumexp(more stable)'
+                    'softplus(most stable)')
 flags.DEFINE_bool('zero_kl', False, 'whether to zero out the kl loss')
 
 # Setting for MCMC sampling
@@ -818,14 +819,14 @@ def main():
 
         if FLAGS.train:
 
-            if FLAGS.objective == 'logsumexp'
-            pos_term = temp * energy_pos
-            energy_neg_reduced = (energy_neg - tf.reduce_min(energy_neg))
-            coeff = tf.stop_gradient(tf.exp(-temp * energy_neg_reduced))
-            norm_constant = tf.stop_gradient(tf.reduce_sum(coeff)) + 1e-4
-            pos_loss = tf.reduce_mean(temp * energy_pos)
-            neg_loss = coeff * (-1 * temp * energy_neg) / norm_constant
-            loss_ml = FLAGS.ml_coeff * (pos_loss + tf.reduce_sum(neg_loss))
+            if FLAGS.objective == 'logsumexp':
+                pos_term = temp * energy_pos
+                energy_neg_reduced = (energy_neg - tf.reduce_min(energy_neg))
+                coeff = tf.stop_gradient(tf.exp(-temp * energy_neg_reduced))
+                norm_constant = tf.stop_gradient(tf.reduce_sum(coeff)) + 1e-4
+                pos_loss = tf.reduce_mean(temp * energy_pos)
+                neg_loss = coeff * (-1 * temp * energy_neg) / norm_constant
+                loss_ml = FLAGS.ml_coeff * (pos_loss + tf.reduce_sum(neg_loss))
             elif FLAGS.objective == 'cd':
                 pos_term = tf.reduce_mean(temp * energy_pos)
                 neg_loss = -tf.reduce_mean(temp * energy_neg)

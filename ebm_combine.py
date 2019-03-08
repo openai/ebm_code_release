@@ -4,20 +4,19 @@ from tqdm import tqdm
 from hmc import hmc
 from tensorflow.python.platform import flags
 from torch.utils.data import DataLoader, Dataset
-from models_copy import DspritesNet, DspritesNetGen
-# from utils import optimistic_restore, smart_fc_block, smart_res_block, init_fc_weight, init_res_weight
-from utils_copy import optimistic_restore, ReplayBuffer
+from models import DspritesNet
+from utils import optimistic_restore, ReplayBuffer
 import os.path as osp
 import numpy as np
 from rl_algs.logger import TensorBoardOutputFormat
 from scipy.misc import imsave
 import os
-from custom_adam_copy import AdamOptimizer
+from custom_adam import AdamOptimizer
 
 flags.DEFINE_integer('batch_size', 256, 'Size of inputs')
 flags.DEFINE_integer('data_workers', 4, 'Number of workers to do things')
-flags.DEFINE_string('logdir', '/mnt/nfs/yilundu/pot_kmeans/cachedir', 'directory for logging')
-flags.DEFINE_string('savedir', '/mnt/nfs/yilundu/pot_kmeans/sandbox_cachedir', 'location where log of experiments will be stored')
+flags.DEFINE_string('logdir', '/mnt/nfs/yilundu/ebm_code_release/cachedir', 'directory for logging')
+flags.DEFINE_string('savedir', '/mnt/nfs/yilundu/ebm_code_release/cachedir', 'location where log of experiments will be stored')
 flags.DEFINE_integer('num_filters', 64, 'number of filters for conv nets -- 32 for miniimagenet, 64 for omniglot.')
 flags.DEFINE_float('step_lr', 500, 'size of gradient descent size')
 flags.DEFINE_string('dsprites_path', '/root/data/dsprites-dataset/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz', 'path to dsprites characters')
@@ -212,8 +211,6 @@ def genbaseline(sess, kvs, data, latents, save_exp_dir, frac=0.0):
     saver = tf.train.Saver()
 
     vs = optimizer.variables()
-    # sess.run(tf.variables_initializer(vs))
-    # sess.run(tf.variables_initializer(tf.get_collection("", scope="context_baseline")))
     sess.run(tf.global_variables_initializer())
 
     if FLAGS.train:
@@ -233,9 +230,6 @@ def genbaseline(sess, kvs, data, latents, save_exp_dir, frac=0.0):
                 loss, _ = sess.run(output, feed_dict=feed_dict)
 
                 itr += 1
-
-                # if itr % 10 == 0:
-                #     print("x_off of {} itr {}".format(loss, itr))
 
         saver.save(sess, osp.join(save_exp_dir, 'model_genbaseline'))
 
@@ -378,8 +372,6 @@ def gentest(sess, kvs, data, latents, save_exp_dir):
         loss_kl = model_shape.forward(x_final, weight_shape, reuse=True, label=LABEL_SHAPE, stop_grad=True) + \
                   model_pos.forward(x_final, weight_pos, reuse=True, label=LABEL_POS, stop_grad=True)
 
-        # loss_kl = tf.zeros(1)
-
         energy_pos = model_shape.forward(X, weight_shape, reuse=True, label=LABEL_SHAPE) + \
                       model_pos.forward(X, weight_pos, reuse=True, label=LABEL_POS)
 
@@ -389,8 +381,6 @@ def gentest(sess, kvs, data, latents, save_exp_dir):
         loss_kl = model_rot.forward(x_final, weight_rot, reuse=True, label=LABEL_ROT, stop_grad=True) + \
                   model_pos.forward(x_final, weight_pos, reuse=True, label=LABEL_POS, stop_grad=True)
 
-        # loss_kl = tf.zeros(1)
-
         energy_pos = model_rot.forward(X, weight_rot, reuse=True, label=LABEL_ROT) + \
                       model_pos.forward(X, weight_pos, reuse=True, label=LABEL_POS)
 
@@ -399,7 +389,6 @@ def gentest(sess, kvs, data, latents, save_exp_dir):
     else:
         loss_kl = model_size.forward(x_final, weight_size, reuse=True, label=LABEL_SIZE, stop_grad=True) + \
                     model_pos.forward(x_final, weight_pos, reuse=True, label=LABEL_POS, stop_grad=True)
-        # loss_kl = tf.zeros(1)
 
         energy_pos = model_size.forward(X, weight_size, reuse=True, label=LABEL_SIZE) + \
                       model_pos.forward(X, weight_pos, reuse=True, label=LABEL_POS)
@@ -623,12 +612,6 @@ def conceptcombine(sess, kvs, data, latents, save_exp_dir):
 def main():
     data = np.load(FLAGS.dsprites_path)['imgs']
     l = latents = np.load(FLAGS.dsprites_path)['latents_values']
-
-    # mask = (l[:, 1] == 1) & (l[:, 3] == 30 * np.pi / 39) & (l[:, 2] == 0.5)
-    # data = data[mask]
-    # latents = latents[mask]
-    # # Hack cause yeah
-    # print("YOU SHOULD PROBABLY REMOVE THIS HACK")
 
     np.random.seed(1)
     idx = np.random.permutation(data.shape[0])
