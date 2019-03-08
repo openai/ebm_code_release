@@ -14,21 +14,22 @@ import torchvision
 FLAGS = flags.FLAGS
 
 # Dataset Options
-flags.DEFINE_string('character_path', '/mnt/nfs/yilundu/custom_maml/data/omniglot_resized/Greek', 'path to character to generate with potential function')
-flags.DEFINE_string('omniglot_path', '/root/omniglot_resized', 'path to all characters')
-flags.DEFINE_string('dsprites_path', '/root/data/dsprites-dataset/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz', 'path to dsprites characters')
-flags.DEFINE_string('cubes_path', '/mnt/nfs/yilundu/pot_kmeans/total_cube.npz', 'path to dsprites characters')
+flags.DEFINE_string('dsprites_path',
+    '/root/data/dsprites-dataset/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz',
+    'path to dsprites characters')
 flags.DEFINE_bool('dshape_only', False, 'fix all factors except for shapes')
-flags.DEFINE_bool('dpos_only', False, 'fix all factors except for shapes')
-flags.DEFINE_bool('dsize_only', False, 'fix all factors except for size of objects')
+flags.DEFINE_bool('dpos_only', False, 'fix all factors except for positions of shapes')
+flags.DEFINE_bool('dsize_only', False,'fix all factors except for size of objects')
 flags.DEFINE_bool('drot_only', False, 'fix all factors except for rotation of objects')
 flags.DEFINE_bool('dsprites_restrict', False, 'fix all factors except for rotation of objects')
 flags.DEFINE_string('imagenet_path', '/root/imagenet', 'path to imagenet images')
-flags.DEFINE_string('image_path', '/root/miniImagenet/train/', 'path to the imagenet class')
-flags.DEFINE_bool('cutout_inside', False, 'whether cutoff should always in image')
+
+
+# Data augmentation options
+flags.DEFINE_bool('cutout_inside', False,'whether cutoff should always in image')
 flags.DEFINE_float('cutout_prob', 1.0, 'probability of using cutout')
 flags.DEFINE_integer('cutout_mask_size', 16, 'size of cutout')
-flags.DEFINE_bool('cutout', False, 'whether to add cutout regularizer to training')
+flags.DEFINE_bool('cutout', False,'whether to add cutout regularizer to data')
 
 
 def cutout(mask_color=(0, 0, 0)):
@@ -115,7 +116,6 @@ class OmniglotCharacter(Dataset):
             im_corrupt = imread(path)
             im_corrupt = (255 - im_corrupt) / 255
 
-
         return im_corrupt, im, label
 
 
@@ -144,7 +144,8 @@ class CelebA(Dataset):
         if FLAGS.datasource == 'default':
             im_corrupt = im + 0.3 * np.random.randn(image_size, image_size, 3)
         elif FLAGS.datasource == 'random':
-            im_corrupt = np.random.uniform(0, 1,  size=(image_size, image_size, 3))
+            im_corrupt = np.random.uniform(
+                0, 1, size=(image_size, image_size, 3))
 
         return im_corrupt, im, label
 
@@ -180,7 +181,8 @@ class OmniglotFull(Dataset):
 
             for cdir in character_dirs:
                 char_paths = osp.join(character_dir, cdir)
-                paths = [osp.join(char_paths, im) for im in os.listdir(char_paths)]
+                paths = [osp.join(char_paths, im)
+                         for im in os.listdir(char_paths)]
 
                 self.paths.extend(paths)
 
@@ -204,8 +206,8 @@ class OmniglotFull(Dataset):
         elif FLAGS.datasource == 'random':
             im_corrupt = 0.5 + 0.5 * np.random.randn(image_size, image_size)
 
-
         return im_corrupt, im, label
+
 
 class ImagenetClass(Dataset):
 
@@ -229,7 +231,6 @@ class ImagenetClass(Dataset):
 
         self.path = self.pos_paths + self.neg_paths
 
-
     def __len__(self):
         return len(self.path)
 
@@ -246,7 +247,7 @@ class ImagenetClass(Dataset):
 
         if len(im.shape) != 3:
             print(path)
-            return self.__getitem__(index+1)
+            return self.__getitem__(index + 1)
 
         if FLAGS.datasource == 'default':
             im_corrupt = im + 0.3 * np.random.randn(image_size, image_size, 3)
@@ -259,7 +260,7 @@ class ImagenetClass(Dataset):
 
             if len(im_corrupt.shape) != 3:
                 # print(path)
-                return self.__getitem__(index+1)
+                return self.__getitem__(index + 1)
 
             im_corrupt = im_corrupt[:, :, :3]
 
@@ -267,7 +268,13 @@ class ImagenetClass(Dataset):
 
 
 class Cifar10(Dataset):
-    def __init__(self, train=True, full=False, augment=False, noise=True, rescale=1.0):
+    def __init__(
+            self,
+            train=True,
+            full=False,
+            augment=False,
+            noise=True,
+            rescale=1.0):
 
         if augment:
             transform_list = [
@@ -284,8 +291,16 @@ class Cifar10(Dataset):
             transform = transforms.ToTensor()
 
         self.full = full
-        self.data = CIFAR10("/root/cifar10", transform=transform, train=train, download=True)
-        self.test_data = CIFAR10("/root/cifar10", transform=transform, train=False, download=True)
+        self.data = CIFAR10(
+            "/root/cifar10",
+            transform=transform,
+            train=train,
+            download=True)
+        self.test_data = CIFAR10(
+            "/root/cifar10",
+            transform=transform,
+            train=False,
+            download=True)
         self.one_hot_map = np.eye(10)
         self.noise = noise
         self.rescale = rescale
@@ -316,14 +331,16 @@ class Cifar10(Dataset):
         im = im * 255 / 256
 
         if self.noise:
-            im = im * self.rescale + np.random.uniform(0, self.rescale * 1 / 256., im.shape)
+            im = im * self.rescale + \
+                np.random.uniform(0, self.rescale * 1 / 256., im.shape)
 
         np.random.seed((index + int(time.time() * 1e7)) % 2**32)
 
         if FLAGS.datasource == 'default':
             im_corrupt = im + 0.3 * np.random.randn(image_size, image_size, 3)
         elif FLAGS.datasource == 'random':
-            im_corrupt = np.random.uniform(0.0, self.rescale, (image_size, image_size, 3))
+            im_corrupt = np.random.uniform(
+                0.0, self.rescale, (image_size, image_size, 3))
 
         return im_corrupt, im, label
 
@@ -345,7 +362,11 @@ class Cifar100(Dataset):
         else:
             transform = transforms.ToTensor()
 
-        self.data = CIFAR100("/root/cifar100", transform=transform, train=train, download=True)
+        self.data = CIFAR100(
+            "/root/cifar100",
+            transform=transform,
+            train=train,
+            download=True)
         self.one_hot_map = np.eye(100)
 
     def __len__(self):
@@ -360,13 +381,14 @@ class Cifar100(Dataset):
         im = np.transpose(im, (1, 2, 0)).numpy()
         image_size = 32
         label = self.one_hot_map[label]
-        im = im + np.random.uniform(-1/512, 1/512, im.shape)
+        im = im + np.random.uniform(-1 / 512, 1 / 512, im.shape)
         np.random.seed((index + int(time.time() * 1e7)) % 2**32)
 
         if FLAGS.datasource == 'default':
             im_corrupt = im + 0.3 * np.random.randn(image_size, image_size, 3)
         elif FLAGS.datasource == 'random':
-            im_corrupt = np.random.uniform(0.0, 1.0, (image_size, image_size, 3))
+            im_corrupt = np.random.uniform(
+                0.0, 1.0, (image_size, image_size, 3))
 
         return im_corrupt, im, label
 
@@ -391,20 +413,24 @@ class Svhn(Dataset):
         im = np.transpose(im, (1, 2, 0)).numpy()
         image_size = 32
         label = self.one_hot_map[label]
-        im = im + np.random.uniform(-1/512, 1/512, im.shape)
+        im = im + np.random.uniform(-1 / 512, 1 / 512, im.shape)
         np.random.seed((index + int(time.time() * 1e7)) % 2**32)
 
         if FLAGS.datasource == 'default':
             im_corrupt = im + 0.3 * np.random.randn(image_size, image_size, 3)
         elif FLAGS.datasource == 'random':
-            im_corrupt = np.random.uniform(0.0, 1.0, (image_size, image_size, 3))
+            im_corrupt = np.random.uniform(
+                0.0, 1.0, (image_size, image_size, 3))
 
         return im_corrupt, im, label
 
 
 class Mnist(Dataset):
     def __init__(self):
-        self.data = MNIST("/root/mnist", transform=transforms.ToTensor(), download=True)
+        self.data = MNIST(
+            "/root/mnist",
+            transform=transforms.ToTensor(),
+            download=True)
         self.labels = np.eye(10)
 
     def __len__(self):
@@ -433,9 +459,13 @@ class Cubes(Dataset):
 
         if cond_idx != -1:
             mask = np.zeros((1, 24))
-            mask[:, cond_idx*6:(cond_idx+1)*6] = 1.
+            mask[:, cond_idx * 6:(cond_idx + 1) * 6] = 1.
 
-            data_mask = ((self.label * mask).sum(axis=1, keepdims=True) != 0).squeeze()
+            data_mask = (
+                (self.label *
+                 mask).sum(
+                    axis=1,
+                    keepdims=True) != 0).squeeze()
 
             self.data = self.data[data_mask]
             self.label = self.label[data_mask]
@@ -448,7 +478,7 @@ class Cubes(Dataset):
         im = self.data[index] / 255.
 
         if cond_idx != -1:
-            label = self.label[index, cond_idx*6:(cond_idx+1)*6]
+            label = self.label[index, cond_idx * 6:(cond_idx + 1) * 6]
         else:
             label = self.label[index]
 
@@ -463,36 +493,46 @@ class Cubes(Dataset):
 
 
 class DSprites(Dataset):
-    def __init__(self, cond_size=False, cond_shape=False, cond_pos=False, cond_rot=False):
+    def __init__(
+            self,
+            cond_size=False,
+            cond_shape=False,
+            cond_pos=False,
+            cond_rot=False):
         dat = np.load(FLAGS.dsprites_path)
 
         if FLAGS.dshape_only:
             l = dat['latents_values']
-            mask = (l[:, 4] == 16/31) & (l[:, 5] == 16/31) & (l[:, 2] == 0.5) & (l[:, 3] == 30 * np.pi / 39)
+            mask = (l[:, 4] == 16 / 31) & (l[:, 5] == 16 /
+                                           31) & (l[:, 2] == 0.5) & (l[:, 3] == 30 * np.pi / 39)
             self.data = np.tile(dat['imgs'][mask], (10000, 1, 1))
             self.label = np.tile(dat['latents_values'][mask], (10000, 1))
             self.label = self.label[:, 1:2]
         elif FLAGS.dpos_only:
             l = dat['latents_values']
             # mask = (l[:, 1] == 1) & (l[:, 2] == 0.5) & (l[:, 3] == 30 * np.pi / 39)
-            mask = (l[:, 1] == 1) & (l[:, 3] == 30 * np.pi / 39) & (l[:, 2] == 0.5)
+            mask = (l[:, 1] == 1) & (
+                l[:, 3] == 30 * np.pi / 39) & (l[:, 2] == 0.5)
             self.data = np.tile(dat['imgs'][mask], (100, 1, 1))
             self.label = np.tile(dat['latents_values'][mask], (100, 1))
             self.label = self.label[:, 4:] + 0.5
         elif FLAGS.dsize_only:
             l = dat['latents_values']
             # mask = (l[:, 1] == 1) & (l[:, 2] == 0.5) & (l[:, 3] == 30 * np.pi / 39)
-            mask = (l[:, 3] == 30 * np.pi / 39) & (l[:, 4] == 16/31) & (l[:, 5] == 16/31) & (l[:, 1] == 1)
+            mask = (l[:, 3] == 30 * np.pi / 39) & (l[:, 4] == 16 /
+                                                   31) & (l[:, 5] == 16 / 31) & (l[:, 1] == 1)
             self.data = np.tile(dat['imgs'][mask], (10000, 1, 1))
             self.label = np.tile(dat['latents_values'][mask], (10000, 1))
             self.label = (self.label[:, 2:3])
         elif FLAGS.drot_only:
             l = dat['latents_values']
-            mask = (l[:, 2] == 0.5) & (l[:, 4] == 16/31) & (l[:, 5] == 16/31) & (l[:, 1] == 1)
+            mask = (l[:, 2] == 0.5) & (l[:, 4] == 16 /
+                                       31) & (l[:, 5] == 16 / 31) & (l[:, 1] == 1)
             self.data = np.tile(dat['imgs'][mask], (100, 1, 1))
             self.label = np.tile(dat['latents_values'][mask], (100, 1))
             self.label = (self.label[:, 3:4])
-            self.label = np.concatenate([np.cos(self.label), np.sin(self.label)], axis=1)
+            self.label = np.concatenate(
+                [np.cos(self.label), np.sin(self.label)], axis=1)
         elif FLAGS.dsprites_restrict:
             l = dat['latents_values']
             mask = (l[:, 1] == 1) & (l[:, 3] == 0 * np.pi / 39)
@@ -511,7 +551,8 @@ class DSprites(Dataset):
                 self.label = self.label[:, 4:]
             elif cond_rot:
                 self.label = self.label[:, 3:4]
-                self.label = np.concatenate([np.cos(self.label), np.sin(self.label)], axis=1)
+                self.label = np.concatenate(
+                    [np.cos(self.label), np.sin(self.label)], axis=1)
             else:
                 self.label = self.label[:, 1:2]
 
@@ -524,8 +565,14 @@ class DSprites(Dataset):
         im = self.data[index]
         image_size = 64
 
-        if not (FLAGS.dpos_only or FLAGS.dsize_only) and (not FLAGS.cond_size) and (not FLAGS.cond_pos) and (not FLAGS.cond_rot) and (not FLAGS.drot_only):
-            label = self.identity[self.label[index].astype(np.int32)-1].squeeze()
+        if not (
+            FLAGS.dpos_only or FLAGS.dsize_only) and (
+            not FLAGS.cond_size) and (
+            not FLAGS.cond_pos) and (
+                not FLAGS.cond_rot) and (
+                    not FLAGS.drot_only):
+            label = self.identity[self.label[index].astype(
+                np.int32) - 1].squeeze()
         else:
             label = self.label[index]
 
@@ -542,7 +589,12 @@ class Imagenet(Dataset):
 
         if train:
             for i in range(1, 11):
-                f = pickle.load(open(osp.join(FLAGS.imagenet_path, 'train_data_batch_{}'.format(i)) ,'rb'))
+                f = pickle.load(
+                    open(
+                        osp.join(
+                            FLAGS.imagenet_path,
+                            'train_data_batch_{}'.format(i)),
+                        'rb'))
                 if i == 1:
                     labels = f['labels']
                     data = f['data']
@@ -550,7 +602,12 @@ class Imagenet(Dataset):
                     labels.extend(f['labels'])
                     data = np.vstack((data, f['data']))
         else:
-            f = pickle.load(open(osp.join(FLAGS.imagenet_path, 'val_data') ,'rb'))
+            f = pickle.load(
+                open(
+                    osp.join(
+                        FLAGS.imagenet_path,
+                        'val_data'),
+                    'rb'))
             labels = f['labels']
             data = f['data']
 
@@ -573,13 +630,14 @@ class Imagenet(Dataset):
         im = im.transpose((1, 2, 0))
         image_size = 32
         label = self.one_hot_map[label]
-        im = im + np.random.uniform(-1/512, 1/512, im.shape)
+        im = im + np.random.uniform(-1 / 512, 1 / 512, im.shape)
         np.random.seed((index + int(time.time() * 1e7)) % 2**32)
 
         if FLAGS.datasource == 'default':
             im_corrupt = im + 0.3 * np.random.randn(image_size, image_size, 3)
         elif FLAGS.datasource == 'random':
-            im_corrupt = np.random.uniform(0.0, 1.0, (image_size, image_size, 3))
+            im_corrupt = np.random.uniform(
+                0.0, 1.0, (image_size, image_size, 3))
 
         return im_corrupt, im, label
 
@@ -596,6 +654,6 @@ class Textures(Dataset):
         im, label = self.dataset[idx]
 
         im = np.array(im)[:32, :32] / 255
-        im = im + np.random.uniform(-1/512, 1/512, im.shape)
+        im = im + np.random.uniform(-1 / 512, 1 / 512, im.shape)
 
         return im, im, label

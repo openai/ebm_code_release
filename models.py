@@ -439,6 +439,9 @@ class ResNet32Larger(object):
 
             init_attention_weight(weights, 'atten', 2*self.dim_hidden, self.dim_hidden / 2, trainable_gamma=True)
 
+            # if FLAGS.cclass:
+            #     weights['cond_proj'] = get_weight('proj_embed', [classes, 2*self.dim_hidden]) / 5.
+
         return weights
 
     def forward(self, inp, weights, reuse=False, scope='', stop_grad=False, label=None, stop_at_grad=False, stop_batch=False, return_logit=False):
@@ -489,7 +492,16 @@ class ResNet32Larger(object):
             hidden6 = tf.nn.relu(hidden9)
         hidden5 = tf.reduce_sum(hidden6, [1, 2])
 
+        # # Use a fully connected network
+        # hidden6 = tf.reshape(hidden6, (batch, -1))
+        # hidden5 = tf.nn.leaky_relu(smart_fc_block(hidden6, weights, reuse, 'fc_dense'))
+
         hidden6 = smart_fc_block(hidden5, weights, reuse, 'fc5')
+
+        # if FLAGS.cclass:
+        #     embed = tf.matmul(label, weights['cond_proj'])
+        #     class_energy = tf.reduce_sum(embed * hidden5, axis=[1])
+        #     hidden6 = hidden6 + class_energy
 
         energy = hidden6
 

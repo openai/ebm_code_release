@@ -7,7 +7,6 @@ from torch.utils.data import DataLoader
 import torch
 from models import ResNet32, ResNet32Large, ResNet32Larger, ResNet32Wider, DspritesNet
 from data import Cifar10, Svhn, Cifar100, Textures, Imagenet, DSprites
-# from utils import optimistic_restore, smart_fc_block, smart_res_block, init_fc_weight, init_res_weight
 from utils import optimistic_restore, set_seed
 import os.path as osp
 import numpy as np
@@ -20,7 +19,6 @@ from scipy.linalg import eig
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 
-# torch.manual_seed(0)
 set_seed(5)
 
 flags.DEFINE_string('datasource', 'random', 'default or noise or negative or single')
@@ -88,7 +86,6 @@ def label(dataloader, test_dataloader, target_vars, sess, l1val=8, l2val=40):
 
     label_init = np.tile(np.eye(10)[None :, :], (FLAGS.batch_size, 1, 1))
     label_init = np.reshape(label_init, (-1, 10))
-    # label_init = np.random.uniform(0, 1, (FLAGS.batch_size, 10))
 
     for i in range(1):
         emp_accuracies = []
@@ -98,10 +95,6 @@ def label(dataloader, test_dataloader, target_vars, sess, l1val=8, l2val=40):
             emp_accuracy = sess.run([accuracy], feed_dict)
             emp_accuracies.append(emp_accuracy)
             print(np.array(emp_accuracies).mean())
-
-        # for data_corrupt, data, label_gt in tqdm(dataloader):
-        #     feed_dict = {X: data, Y_GT: label_gt, Y: label_init}
-        #     _ = sess.run([train_op], feed_dict)
 
         print("Received total accuracy of {} for li of {} and l2 of {}".format(np.array(emp_accuracies).mean(), l1val, l2val))
 
@@ -122,7 +115,6 @@ def labelfinetune(dataloader, test_dataloader, target_vars, sess, savedir, saver
 
     label_init = np.tile(np.eye(10)[None :, :], (FLAGS.batch_size, 1, 1))
     label_init = np.reshape(label_init, (-1, 10))
-    # label_init = np.random.uniform(0, 1, (FLAGS.batch_size, 10))
 
     itr = 0
 
@@ -174,33 +166,12 @@ def energyeval(dataloader, test_dataloader, target_vars, sess):
         feed_dict = {X: data, Y_GT: label_gt}
         train_energy = sess.run([energy], feed_dict)[0]
         train_energies.extend(list(train_energy))
-    # train_energies = []
-    # sample_energies = []
-    # i = 0
-    # for data_corrupt, data, label_gt in tqdm(dataloader):
-    #     feed_dict = {X: data, Y_GT: label_gt}
-    #     train_energy = sess.run([energy], feed_dict)[0]
-
-    #     feed_dict = {X: data_corrupt, Y_GT: label_gt}
-    #     sample_energy = sess.run([energy_end], feed_dict)[0]
-
-    #     train_energies.extend(list(train_energy))
-    #     sample_energies.extend(list(sample_energy))
-
-    #     i += 1
-
-    #     if i == 30:
-    #         np.save("train.npy", np.array(train_energies))
-    #         np.save("sample.npy", np.array(sample_energies))
-    #         break
-
 
     print(len(train_energies))
     print(len(test_energies))
 
     print("Train energies of {} with std {}".format(np.mean(train_energies), np.std(train_energies)))
     print("Test energies of {} with std {}".format(np.mean(test_energies), np.std(test_energies)))
-    # print("Test energies of {} with std {}".format(np.mean(test_energies), np.std(test_energies)))
 
     np.save("train_ebm.npy", train_energies)
     np.save("test_ebm.npy", test_energies)
@@ -238,9 +209,6 @@ def energyevalmix(dataloader, test_dataloader, target_vars, sess):
         elif FLAGS.texturemix:
             _, data_mix, _ = test_iter.next()
         elif FLAGS.randommix:
-            # data_mix = np.random.uniform(0, 1.0, (FLAGS.batch_size, 1, 1, 1))
-            # data_mix = np.zeros((FLAGS.batch_size, 1, 1, 1))
-            # data_mix = np.tile(data_mix, (1, 32, 32, 3))
             data_mix = np.random.randn(FLAGS.batch_size, 32, 32, 3) * 0.5 + 0.5
         else:
             data_idx = np.concatenate([np.arange(1, data.shape[0]), [0]])
@@ -327,14 +295,8 @@ def boxcorrupt(test_dataloader, dataloader, weights, model, target_vars, logdir,
         data, label_gt = data.numpy(), label_gt.numpy()
         data_uncorrupts =  []
 
-        # data = np.tile(data[:4], (8, 1, 1, 1))
-        # label_gt = np.tile(label_gt[:4], (8, 1))
         data_corrupt = data.copy()
-        # data_corrupt[:, 10:24, 10:24] = np.random.uniform(0, 1, (FLAGS.batch_size, 14, 14, 3))
-        # data_corrupt[:, 16:, :] = 0.5 # np.random.uniform(0, 1, (FLAGS.batch_size, 16, 32, 3))
-        # data_corrupt[:, :, 16:] = data_corrupt[:, :, 16:].mean(axis=(1, 2), keepdims=True)
         data_corrupt[:, 16:, :] = np.random.uniform(0, 1, (FLAGS.batch_size, 16, 32, 3))
-        # data_corrupt[:, 16:, :] = data_corrupt[:, 16:, :].mean(axis=(1, 2), keepdims=True) + np.random.uniform(-0.5, 0.5, (FLAGS.batch_size, 16, 32, 3))
 
         data_corrupt_init = data_corrupt
 
@@ -342,21 +304,8 @@ def boxcorrupt(test_dataloader, dataloader, weights, model, target_vars, logdir,
             feed_dict = {X: data_corrupt, Y_GT: label_gt}
             data_corrupt = sess.run([X_final], feed_dict)[0]
 
-        # data_corrupt, data = rescale_im(data_corrupt), rescale_im(data)
         val = np.mean(np.square(data_corrupt - data), axis=(1, 2, 3))
         data_diff.extend(list(val))
-        # data_corrupt_init = rescale_im(data_corrupt_init)
-
-
-        # panel_im = np.zeros((32*32, 32*(3), 3)).astype(np.uint8)
-
-        # for i in range(32):
-        #     panel_im[32*i:32*i+32, :32] = data_corrupt_init[i]
-        #     panel_im[32*i:32*i+32, 32:64] = data_corrupt[i]
-        #     panel_im[32*i:32*i+32, -32:] = data[i]
-
-        # imsave(osp.join(logdir, "boxcorrupt.png"), panel_im)
-        # assert False
 
         if len(data_diff) > eval_im:
             break
