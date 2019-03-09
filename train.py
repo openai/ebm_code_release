@@ -3,7 +3,7 @@ import numpy as np
 from tensorflow.python.platform import flags
 
 from data import Imagenet, Cifar10, DSprites, Mnist
-from models import DspritesNet, ResNet32, ResNet32Large, ResNet32Larger, ResNet32Wider
+from models import DspritesNet, ResNet32, ResNet32Large, ResNet32Larger, ResNet32Wider, MnistNet
 import os.path as osp
 import os
 from baselines.logger import TensorBoardOutputFormat
@@ -155,7 +155,6 @@ def rescale_im(image):
 
 def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
     X = target_vars['X']
-    X_GEN = target_vars['X_GEN']
     Y = target_vars['Y']
     X_NOISE = target_vars['X_NOISE']
     train_op = target_vars['train_op']
@@ -516,75 +515,14 @@ def main():
     else:
         logger = None
 
+    LABEL = None
     print("Loading data...")
     if FLAGS.dataset == 'cifar10':
         dataset = Cifar10(augment=FLAGS.augment, rescale=FLAGS.rescale)
         test_dataset = Cifar10(train=False, rescale=FLAGS.rescale)
         channel_num = 3
         dim_input = 32 * 32 * 3
-    elif FLAGS.dataset == 'imagenet':
-        dataset = Imagenet()
-        channel_num = 3
-        dim_input = 32 * 32 * 3
-    elif FLAGS.dataset == 'mnist':
-        dataset = Mnist()
-        test_dataset = dataset
-        channel_num = 1
-        dim_input = 28 * 28 * 1
-    elif FLAGS.dataset == 'dsprites':
-        dataset = DSprites(
-            cond_shape=FLAGS.cond_shape,
-            cond_size=FLAGS.cond_size,
-            cond_pos=FLAGS.cond_pos,
-            cond_rot=FLAGS.cond_rot)
-        test_dataset = dataset
-        channel_num = 1
-        dim_input = 64 * 64 * 1
 
-    print("Done loading...")
-    data_loader = DataLoader(
-        dataset,
-        batch_size=FLAGS.batch_size,
-        num_workers=FLAGS.data_workers,
-        drop_last=True,
-        shuffle=True)
-    data_loader_test = DataLoader(
-        test_dataset,
-        batch_size=FLAGS.batch_size,
-        num_workers=FLAGS.data_workers,
-        drop_last=True,
-        shuffle=True)
-
-    batch_size = FLAGS.batch_size
-
-    weights = [model.construct_weights('context_{}'.format(i))]
-
-    Y = tf.placeholder(shape=(None), dtype=tf.int32)
-    LABEL = None
-
-    if FLAGS.dataset == 'mnist':
-        X_NOISE = tf.placeholder(shape=(None, 28, 28), dtype=tf.float32)
-        X = tf.placeholder(shape=(None, 28, 28), dtype=tf.float32)
-        LABEL = tf.placeholder(shape=(None, 10), dtype=tf.float32)
-        LABEL_POS = tf.placeholder(shape=(None, 10), dtype=tf.float32)
-        model = OmniglotNet(
-            dim_input=dim_input,
-            num_channels=channel_num,
-            num_filters=FLAGS.num_filters,
-            dim_output=dim_output)
-
-    elif FLAGS.dataset == 'imagenet':
-        X_NOISE = tf.placeholder(shape=(None, 32, 32, 3), dtype=tf.float32)
-        X = tf.placeholder(shape=(None, 32, 32, 3), dtype=tf.float32)
-        LABEL = tf.placeholder(shape=(None, 1000), dtype=tf.float32)
-        LABEL_POS = tf.placeholder(shape=(None, 1000), dtype=tf.float32)
-        model = ResNet32Wider(
-            dim_input=dim_input,
-            num_channels=channel_num,
-            num_filters=256,
-            dim_output=dim_output)
-
-    elif FLAGS.dataset == 'cifar10':
         X_NOISE = tf.placeholder(shape=(None, 32, 32, 3), dtype=tf.float32)
         X = tf.placeholder(shape=(None, 32, 32, 3), dtype=tf.float32)
         LABEL = tf.placeholder(shape=(None, 10), dtype=tf.float32)
@@ -616,7 +554,48 @@ def main():
                 num_filters=128,
                 dim_output=dim_output)
 
+    elif FLAGS.dataset == 'imagenet':
+        dataset = Imagenet()
+        channel_num = 3
+        dim_input = 32 * 32 * 3
+        X_NOISE = tf.placeholder(shape=(None, 32, 32, 3), dtype=tf.float32)
+        X = tf.placeholder(shape=(None, 32, 32, 3), dtype=tf.float32)
+        LABEL = tf.placeholder(shape=(None, 1000), dtype=tf.float32)
+        LABEL_POS = tf.placeholder(shape=(None, 1000), dtype=tf.float32)
+
+        model = ResNet32Wider(
+            dim_input=dim_input,
+            num_channels=channel_num,
+            num_filters=256,
+            dim_output=dim_output)
+
+    elif FLAGS.dataset == 'mnist':
+        dataset = Mnist()
+        test_dataset = dataset
+        channel_num = 1
+        dim_input = 28 * 28 * 1
+        X_NOISE = tf.placeholder(shape=(None, 28, 28), dtype=tf.float32)
+        X = tf.placeholder(shape=(None, 28, 28), dtype=tf.float32)
+        LABEL = tf.placeholder(shape=(None, 10), dtype=tf.float32)
+        LABEL_POS = tf.placeholder(shape=(None, 10), dtype=tf.float32)
+
+        model = MnistNet(
+            dim_input=dim_input,
+            num_channels=channel_num,
+            num_filters=FLAGS.num_filters,
+            dim_output=dim_output)
+
     elif FLAGS.dataset == 'dsprites':
+        dataset = DSprites(
+            cond_shape=FLAGS.cond_shape,
+            cond_size=FLAGS.cond_size,
+            cond_pos=FLAGS.cond_pos,
+            cond_rot=FLAGS.cond_rot)
+        test_dataset = dataset
+        channel_num = 1
+        dim_input = 64 * 64 * 1
+        dim_output = 1
+
         X_NOISE = tf.placeholder(shape=(None, 64, 64), dtype=tf.float32)
         X = tf.placeholder(shape=(None, 64, 64), dtype=tf.float32)
 
@@ -653,13 +632,31 @@ def main():
             cond_size=FLAGS.cond_size,
             cond_shape=FLAGS.cond_shape,
             cond_pos=FLAGS.cond_pos,
-            cond_rot=FLAGS.cond_rot,
-            hack=FLAGS.hack)
+            cond_rot=FLAGS.cond_rot)
+
+    print("Done loading...")
+    data_loader = DataLoader(
+        dataset,
+        batch_size=FLAGS.batch_size,
+        num_workers=FLAGS.data_workers,
+        drop_last=True,
+        shuffle=True)
+    data_loader_test = DataLoader(
+        test_dataset,
+        batch_size=FLAGS.batch_size,
+        num_workers=FLAGS.data_workers,
+        drop_last=True,
+        shuffle=True)
+
+    batch_size = FLAGS.batch_size
+
+    weights = [model.construct_weights('context_0')]
+
+    Y = tf.placeholder(shape=(None), dtype=tf.int32)
 
     # Varibles to run in training
     X_SPLIT = tf.split(X, FLAGS.num_gpus)
     X_NOISE_SPLIT = tf.split(X_NOISE, FLAGS.num_gpus)
-    X_GEN_SPLIT = tf.split(X_GEN, FLAGS.num_gpus)
     LABEL_SPLIT = tf.split(LABEL, FLAGS.num_gpus)
     LABEL_POS_SPLIT = tf.split(LABEL_POS, FLAGS.num_gpus)
     LABEL_SPLIT_INIT = list(LABEL_SPLIT)
@@ -707,7 +704,7 @@ def main():
             energy_pos = [
                 model.forward(
                     X_SPLIT[j],
-                    weights[i],
+                    weights[0],
                     label=LABEL_POS_SPLIT[j],
                     stop_at_grad=False)]
             energy_pos = tf.concat(energy_pos, axis=0)
@@ -721,7 +718,7 @@ def main():
         loss_energys = []
 
         energy_negs.extend([model.forward(tf.stop_gradient(
-            x_mod), weights[n], label=LABEL_SPLIT[j], stop_at_grad=False, reuse=True)])
+            x_mod), weights[0], label=LABEL_SPLIT[j], stop_at_grad=False, reuse=True)])
         eps_begin = tf.zeros(1)
 
         for i in range(FLAGS.num_steps):
@@ -732,7 +729,7 @@ def main():
             energy_noise = energy_start = tf.concat(
                 [model.forward(
                         x_mod,
-                        weights[l],
+                        weights[0],
                         label=LABEL_SPLIT[j],
                         reuse=True,
                         stop_at_grad=True,
@@ -759,8 +756,6 @@ def main():
                 if FLAGS.stop_proj_norm:
                     x_grad = tf.stop_gradient(x_grad)
 
-            x_grad = x_grad * decay_size
-
             def energy(x):
                 return FLAGS.temperature * \
                     model.forward(x, weights[0], label=LABEL_SPLIT[j], reuse=True)
@@ -777,10 +772,10 @@ def main():
 
             print("Building loop {} ...".format(i))
 
-            energy_negs.extend(
+            energy_negs.append(
                 model.forward(
                     tf.stop_gradient(x_mod),
-                    weights[n],
+                    weights[0],
                     label=LABEL_SPLIT[j],
                     stop_at_grad=False,
                     reuse=True))
@@ -792,7 +787,7 @@ def main():
         energy_neg = energy_negs[-1]
 
         loss_energy = [tf.clip_by_value(
-            temp * model.forward(x_mod, weights[k], reuse=True, label=LABEL, stop_grad=True), -1e5, 1e5)]
+            temp * model.forward(x_mod, weights[0], reuse=True, label=LABEL, stop_grad=True), -1e5, 1e5)]
         loss_energy = tf.concat(loss_energy, axis=0)
         x_off = tf.reduce_mean(
             tf.abs(x_mod[:tf.shape(X_SPLIT[j])[0]] - X_SPLIT[j]))
@@ -861,7 +856,6 @@ def main():
             target_vars['gvs'] = gvs
 
         target_vars['X'] = X
-        target_vars['X_GEN'] = X_GEN
         target_vars['Y'] = Y
         target_vars['LABEL'] = LABEL
         target_vars['LABEL_POS'] = LABEL_POS

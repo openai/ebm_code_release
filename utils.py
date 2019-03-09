@@ -680,7 +680,7 @@ def conv_block(
     if FLAGS.downsample:
         stride = no_stride
 
-    if not FLAGS.use_bias and not use_bias:
+    if not use_bias:
         bweight = 0
 
     if extra_bias:
@@ -691,6 +691,8 @@ def conv_block(
             batch = tf.shape(bias_batch)[0]
             dim = tf.shape(bias_batch)[1]
             bias = tf.reshape(bias_batch, (batch, 1, 1, dim))
+
+            print(bias.get_shape())
 
         inp = inp + bias
 
@@ -769,7 +771,7 @@ def conv_block_3d(
     stride, no_stride = [1, 1, 2, 2, 1], [1, 1, 1, 1, 1]
     _, d, h, w, _ = inp.get_shape()
 
-    if not FLAGS.use_bias and not use_bias:
+    if not use_bias:
         bweight = 0
 
     if not use_stride:

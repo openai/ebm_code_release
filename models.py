@@ -8,6 +8,81 @@ flags.DEFINE_bool('swish_act', False, 'use the swish activation for dsprites')
 
 FLAGS = flags.FLAGS
 
+
+class MnistNet(object):
+    """Construct the convolutional network specified in MAML"""
+
+    def __init__(self, dim_input=1, num_channels=1, num_filters=64, dim_output=1):
+
+        self.channels = num_channels
+        self.dim_hidden = num_filters
+        self.dim_output = dim_output
+        self.dim_input = dim_input
+        self.datasource = FLAGS.datasource
+        self.img_size = int(np.sqrt(self.dim_input/self.channels))
+
+        if FLAGS.cclass:
+            self.label_size = 10
+        else:
+            self.label_size = 0
+
+    def construct_weights(self, scope=''):
+        weights = {}
+
+        dtype = tf.float32
+        conv_initializer =  tf.contrib.layers.xavier_initializer_conv2d(dtype=dtype)
+        fc_initializer =  tf.contrib.layers.xavier_initializer(dtype=dtype)
+
+        with tf.variable_scope(scope):
+            init_conv_weight(weights, 'c1_pre', 3, 1, 32)
+            init_conv_weight(weights, 'c1', 4, 32, self.dim_hidden, classes=classes)
+            init_conv_weight(weights, 'c2', 4, self.dim_hidden, 2*self.dim_hidden, classes=classes)
+            init_conv_weight(weights, 'c3', 4, 2*self.dim_hidden, 2*self.dim_hidden, classes=classes)
+            init_fc_weight(weights, 'fc_dense', 2*4*4*self.dim_hidden, 2*self.dim_hidden, spec_norm=True)
+            init_fc_weight(weights, 'fc5', 2*self.dim_hidden, 1, spec_norm=False)
+
+        if FLAGS.cclass:
+            self.label_size = 10
+        else:
+            self.label_size = 0
+        return weights
+
+    def forward(self, inp, weights, reuse=False, scope='', stop_grad=False, label=None, **kwargs):
+        channels = self.channels
+        inp = tf.reshape(inp, [-1, self.img_size, self.img_size, channels])
+        weights = weights.copy()
+
+        if FLAGS.swish_act:
+            act = swish
+        else:
+            act = tf.nn.leaky_relu
+
+        if stop_grad:
+            for k, v in weights.items():
+                if type(v) == dict:
+                    v = v.copy()
+                    weights[k] = v
+                    for k_sub, v_sub in v.items():
+                        v[k_sub] = tf.stop_gradient(v_sub)
+                else:
+                    weights[k] = tf.stop_gradient(v)
+
+        if FLAGS.cclass:
+            label_d = tf.reshape(label, shape=(tf.shape(label)[0], 1, 1, self.label_size))
+            inp = conv_cond_concat(inp, label_d)
+
+        h1 = smart_conv_block(inp, weights, reuse, 'c1_pre', use_stride=False, activation=act)
+        h2 = smart_conv_block(h1, weights, reuse, 'c1', use_stride=True, downsample=True, label=label, extra_bias=True, activation=act)
+        h3 = smart_conv_block(h2, weights, reuse, 'c2', use_stride=True, downsample=True, label=label, extra_bias=True, activation=act)
+        h4 = smart_conv_block(h3, weights, reuse, 'c3', use_stride=True, downsample=True, label=label, use_scale=True, extra_bias=True, activation=act)
+
+        h5 = tf.reshape(h4, [-1, np.prod([int(dim) for dim in h4.get_shape()[1:]])])
+        h6 = act(smart_fc_block(h5, weights, reuse, 'fc_dense'))
+        hidden6 = smart_fc_block(h5, weights, reuse, 'fc5')
+
+        return hidden6
+
+
 class DspritesNet(object):
     """Construct the convolutional network specified in MAML"""
 
@@ -57,7 +132,6 @@ class DspritesNet(object):
         self.cond_size = cond_size
         self.cond_shape = cond_shape
         self.cond_pos = cond_pos
-        self.hack = hack
 
     def construct_weights(self, scope=''):
         weights = {}
