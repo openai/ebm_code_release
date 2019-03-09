@@ -122,6 +122,7 @@ def make_image(tensor):
     elif len(tensor.shape) == 2:
         height, width = tensor.shape
         channel = 1
+    tensor = tensor.astype(np.uint8)
     image = Image.fromarray(tensor)
     import io
     output = io.BytesIO()
@@ -187,14 +188,11 @@ def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
 
     log_output = [
         train_op,
-        label_diff,
         energy_pos,
         energy_neg,
         eps,
         loss_energy,
         loss_ml,
-        loss_ee,
-        loss_gp,
         loss_total,
         x_grad,
         x_off,
@@ -238,7 +236,7 @@ def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
                         np.random.uniform(
                             0,
                             FLAGS.rescale,
-                            (FLAGS.augfactor * FLAGS.batch_size)) > 0.05)
+                            FLAGS.batch_size)) > 0.05)
                     data_corrupt[replay_mask] = replay_batch[replay_mask]
 
             feed_dict = {X_NOISE: data_corrupt, X: data, Y: label}
@@ -248,7 +246,7 @@ def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
                 feed_dict[LABEL_POS] = label_init
 
             if itr % FLAGS.log_interval == 0:
-                _, label_diff, e_pos, e_neg, eps, loss_e, loss_ml, loss_ee, loss_gp, loss_total, x_grad, x_off, x_mod, gamma, x_grad_first, label_ent, * \
+                _, e_pos, e_neg, eps, loss_e, loss_ml, loss_total, x_grad, x_off, x_mod, gamma, x_grad_first, label_ent, * \
                     grads = sess.run(log_output, feed_dict)
 
                 kvs = {}
@@ -261,8 +259,6 @@ def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
                 kvs['loss_e'] = loss_e.mean()
                 kvs['eps'] = eps.mean()
                 kvs['label_ent'] = label_ent
-                kvs['loss_ee'] = loss_ee.mean()
-                kvs['loss_gp'] = loss_gp.mean()
                 kvs['loss_ml'] = loss_ml.mean()
                 kvs['loss_total'] = loss_total.mean()
                 kvs['x_grad'] = np.abs(x_grad).mean()
@@ -270,7 +266,6 @@ def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
                 kvs['x_off'] = x_off.mean()
                 kvs['iter'] = itr
                 kvs['gamma'] = gamma
-                kvs['label_diff'] = label_diff
 
                 for v, k in zip(grads, [v.name for v in gvs_dict.values()]):
                     kvs[k] = np.abs(v).max()
@@ -309,6 +304,7 @@ def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
                         new_im[:, :size] = im
                         new_im[:, size:2 * size] = t_im
                         new_im[:, 2 * size:] = actual_im_i
+
                         log_image(
                             new_im, logger, 'train_gen_{}'.format(itr), step=i)
 
@@ -662,7 +658,6 @@ def main():
     LABEL_SPLIT_INIT = list(LABEL_SPLIT)
     tower_grads = []
     tower_gen_grads = []
-    tower_grads_reverse = []
     x_mod_list = []
 
     optimizer = AdamOptimizer(FLAGS.lr, beta1=0.0, beta2=0.999)
@@ -823,7 +818,7 @@ def main():
                 neg_loss = coeff * (-1 * temp * energy_neg) / norm_constant
                 loss_ml = FLAGS.ml_coeff * (pos_loss + tf.reduce_sum(neg_loss))
             elif FLAGS.objective == 'cd':
-                pos_term = tf.reduce_mean(temp * energy_pos)
+                pos_loss = tf.reduce_mean(temp * energy_pos)
                 neg_loss = -tf.reduce_mean(temp * energy_neg)
                 loss_ml = FLAGS.ml_coeff * (pos_loss + tf.reduce_sum(neg_loss))
             elif FLAGS.objective == 'softplus':
@@ -845,7 +840,6 @@ def main():
             print("Applying gradients...")
 
             tower_grads.append(gvs)
-            tower_grads_reverse.append(gvs_reverse)
 
             print("Finished applying gradients.")
 
