@@ -236,7 +236,7 @@ def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
                         np.random.uniform(
                             0,
                             FLAGS.rescale,
-                            FLAGS.batch_size)) > 0.05)
+                            FLAGS.batch_size) > 0.05)
                     data_corrupt[replay_mask] = replay_batch[replay_mask]
 
             feed_dict = {X_NOISE: data_corrupt, X: data, Y: label}
