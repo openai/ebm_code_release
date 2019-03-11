@@ -1,4 +1,7 @@
 from tensorflow.python.platform import flags
+from tensorflow.contrib.data.python.ops import batching, threadpool
+import tensorflow as tf
+import json
 from torch.utils.data import Dataset
 import pickle
 import os.path as osp
@@ -9,6 +12,8 @@ from scipy.misc import imread, imresize
 from skimage.color import rgb2grey
 from torchvision.datasets import CIFAR10, MNIST, SVHN, CIFAR100, ImageFolder
 from torchvision import transforms
+from imagenet_preprocessing import ImagenetPreprocessor
+import torch
 import torchvision
 
 FLAGS = flags.FLAGS
@@ -17,6 +22,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string('dsprites_path',
     '/root/data/dsprites-dataset/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz',
     'path to dsprites characters')
+flags.DEFINE_string('imagenet_datadir',  '/root/imagenet_big', 'whether cutoff should always in image')
 flags.DEFINE_bool('dshape_only', False, 'fix all factors except for shapes')
 flags.DEFINE_bool('dpos_only', False, 'fix all factors except for positions of shapes')
 flags.DEFINE_bool('dsize_only', False,'fix all factors except for size of objects')
@@ -67,57 +73,88 @@ def cutout(mask_color=(0, 0, 0)):
     return _cutout
 
 
-class OmniglotCharacter(Dataset):
+class TFImagenetLoader(Dataset):
 
-    def __init__(self):
-        self.path = FLAGS.character_path
-        self.pos_idx = '24'
-        self.pos_paths = []
-        self.neg_paths = []
-        self.pos_images = []
+    def __init__(self, split, batchsize, idx, num_workers, rescale=1):
+        IMAGENET_NUM_TRAIN_IMAGES = 1281167
+        IMAGENET_NUM_VAL_IMAGES = 50000
 
-        character_dirs = os.listdir(self.path)
+        self.rescale = rescale
 
-        for cdir in character_dirs:
-            char_paths = osp.join(self.path, cdir)
-            paths = [osp.join(char_paths, im) for im in os.listdir(char_paths)]
+        if split == "train":
+            im_length = IMAGENET_NUM_TRAIN_IMAGES
+            records_to_skip = im_length * idx // num_workers
+            records_to_read = im_length * (idx + 1) // num_workers - records_to_skip
+        else:
+            im_length = IMAGENET_NUM_VAL_IMAGES
 
-            if self.pos_idx in cdir:
-                self.pos_paths.extend(paths)
-            else:
-                self.neg_paths.extend(paths)
+        self.curr_sample = 0
 
-        for pos_path in self.pos_paths:
-            self.pos_images.append(imread(pos_path))
+        index_path = osp.join(FLAGS.imagenet_datadir, 'index.json')
+        with open(index_path) as f:
+            metadata = json.load(f)
+            counts = metadata['record_counts']
 
-        self.pos_images = (255 - np.stack(self.pos_images, axis=0)) / 255.
-        self.pos_paths = self.pos_paths * 23
-        self.path = self.neg_paths + self.pos_paths
+        if split == 'train':
+            file_names = list(sorted([x for x in counts.keys() if x.startswith('train')]))
 
-    def __len__(self):
-        return len(self.path)
+            result_records_to_skip = None
+            files = []
+            for filename in file_names:
+                records_in_file = counts[filename]
+                if records_to_skip >= records_in_file:
+                    records_to_skip -= records_in_file
+                    continue
+                elif records_to_read > 0:
+                    if result_records_to_skip is None:
+                        # Record the number to skip in the first file
+                        result_records_to_skip = records_to_skip
+                    files.append(filename)
+                    records_to_read -= (records_in_file - records_to_skip)
+                    records_to_skip = 0
+                else:
+                    break
+        else:
+            files = list(sorted([x for x in counts.keys() if x.startswith('validation')]))
 
-    def __getitem__(self, index):
-        label = 1
+        files = [osp.join(FLAGS.imagenet_datadir, x) for x in files]
+        preprocess_function = ImagenetPreprocessor(128, dtype=tf.float32, train=False).parse_and_preprocess
 
-        if FLAGS.single:
-            index = 0
+        ds = tf.data.TFRecordDataset.from_generator(lambda: files, output_types=tf.string)
+        ds = ds.apply(tf.data.TFRecordDataset)
+        ds = ds.take(im_length)
+        ds = ds.prefetch(buffer_size=FLAGS.batch_size)
+        ds = ds.apply(tf.contrib.data.shuffle_and_repeat(buffer_size=10000))
+        ds = ds.apply(batching.map_and_batch(map_func=preprocess_function, batch_size=FLAGS.batch_size, num_parallel_batches=4))
+        ds = ds.prefetch(buffer_size=2)
 
-        path = self.pos_paths[index % len(self.pos_paths)]
-        im = imread(path)
-        im = (255 - im) / 255
+        ds_iterator = ds.make_initializable_iterator()
+        labels, images = ds_iterator.get_next()
+        self.images = tf.clip_by_value(images / 256 + tf.random_uniform(tf.shape(images), 0, 1. / 256), 0.0, 1.0)
+        self.labels = labels
 
-        if FLAGS.datasource == 'default':
-            im_corrupt = im + 0.3 * np.random.randn(image_size, image_size)
-        elif FLAGS.datasource == 'random':
-            im_corrupt = 0.5 + 0.5 * np.random.randn(image_size, image_size)
-        elif FLAGS.datasource == 'neg':
-            path = self.neg_paths[index % len(self.neg_paths)]
-            im_corrupt = imread(path)
-            im_corrupt = (255 - im_corrupt) / 255
+        config = tf.ConfigProto(device_count = {'GPU': 0})
+        sess = tf.Session(config=config)
+        sess.run(ds_iterator.initializer)
 
+        self.im_length = im_length // batchsize
+
+        self.sess = sess
+
+    def __next__(self):
+        self.curr_sample += 1
+
+        sess = self.sess
+
+        im_corrupt = np.random.uniform(0, self.rescale, size=(FLAGS.batch_size, 128, 128, 3))
+        label, im = sess.run([self.labels, self.images])
+        im = im * self.rescale
+        label = np.eye(1000)[label.squeeze() - 1]
+        im, im_corrupt, label = torch.from_numpy(im), torch.from_numpy(im_corrupt), torch.from_numpy(label)
         return im_corrupt, im, label
 
+    def __iter__(self):
+        return self
 
 class CelebA(Dataset):
 
@@ -146,123 +183,6 @@ class CelebA(Dataset):
         elif FLAGS.datasource == 'random':
             im_corrupt = np.random.uniform(
                 0, 1, size=(image_size, image_size, 3))
-
-        return im_corrupt, im, label
-
-
-class Box2D(Dataset):
-
-    def __init__(self):
-        self.minbox = 0.25
-        self.maxbox = 0.75
-
-    def __len__(self):
-        return 10000
-
-    def __getitem__(self, index):
-        im_corrupt = np.random.uniform(0.0, 1.0, (2))
-        im = np.random.uniform(self.minbox, self.maxbox, (2))
-        label = 0
-
-        return im_corrupt, im, label
-
-
-class OmniglotFull(Dataset):
-
-    def __init__(self):
-        self.path = FLAGS.omniglot_path
-        self.paths = []
-
-        alphabet_dirs = os.listdir(self.path)
-
-        for character_dir in alphabet_dirs:
-            character_dir = osp.join(self.path, character_dir)
-            character_dirs = os.listdir(character_dir)
-
-            for cdir in character_dirs:
-                char_paths = osp.join(character_dir, cdir)
-                paths = [osp.join(char_paths, im)
-                         for im in os.listdir(char_paths)]
-
-                self.paths.extend(paths)
-
-    def __len__(self):
-        return len(self.paths)
-
-    def __getitem__(self, index):
-        label = 1
-
-        if FLAGS.single:
-            index = 0
-
-        image_size = 28
-
-        path = self.paths[index]
-        im = imread(path)
-        im = (255 - im) / 255
-
-        if FLAGS.datasource == 'default':
-            im_corrupt = im + 0.3 * np.random.randn(image_size, image_size)
-        elif FLAGS.datasource == 'random':
-            im_corrupt = 0.5 + 0.5 * np.random.randn(image_size, image_size)
-
-        return im_corrupt, im, label
-
-
-class ImagenetClass(Dataset):
-
-    def __init__(self):
-        self.path = FLAGS.image_path
-        # use the jellyfish class for training
-        self.pos_idx = 'n01910747'
-        self.pos_paths = []
-        self.neg_paths = []
-
-        image_dirs = os.listdir(self.path)
-
-        for cdir in image_dirs:
-            char_paths = osp.join(self.path, cdir)
-            paths = [osp.join(char_paths, im) for im in os.listdir(char_paths)]
-
-            if cdir == self.pos_idx:
-                self.pos_paths.extend(paths)
-            else:
-                self.neg_paths.extend(paths)
-
-        self.path = self.pos_paths + self.neg_paths
-
-    def __len__(self):
-        return len(self.path)
-
-    def __getitem__(self, index):
-        label = 1
-        image_size = 64
-
-        if FLAGS.single:
-            index = 0
-
-        path = self.pos_paths[index % len(self.pos_paths)]
-        im = imread(path)
-        im = imresize(im, (image_size, image_size)) / 255.
-
-        if len(im.shape) != 3:
-            print(path)
-            return self.__getitem__(index + 1)
-
-        if FLAGS.datasource == 'default':
-            im_corrupt = im + 0.3 * np.random.randn(image_size, image_size, 3)
-        elif FLAGS.datasource == 'random':
-            im_corrupt = 0.5 + 0.5 * np.random.randn(image_size, image_size, 3)
-        elif FLAGS.datasource == 'neg':
-            path = self.neg_paths[index % len(self.neg_paths)]
-            im_corrupt = imread(path)
-            im_corrupt = imresize(im_corrupt, (image_size, image_size)) / 255.
-
-            if len(im_corrupt.shape) != 3:
-                # print(path)
-                return self.__getitem__(index + 1)
-
-            im_corrupt = im_corrupt[:, :, :3]
 
         return im_corrupt, im, label
 
@@ -446,48 +366,6 @@ class Mnist(Dataset):
             im_corrupt = im + 0.3 * np.random.randn(image_size, image_size)
         elif FLAGS.datasource == 'random':
             im_corrupt = 0.5 + 0.5 * np.random.randn(image_size, image_size)
-
-        return im_corrupt, im, label
-
-
-class Cubes(Dataset):
-    def __init__(self, cond_idx=-1):
-        dat = np.load(FLAGS.cubes_path)
-        self.data = dat['ims']
-        self.label = dat['labels']
-        self.cond_idx = cond_idx
-
-        if cond_idx != -1:
-            mask = np.zeros((1, 24))
-            mask[:, cond_idx * 6:(cond_idx + 1) * 6] = 1.
-
-            data_mask = (
-                (self.label *
-                 mask).sum(
-                    axis=1,
-                    keepdims=True) != 0).squeeze()
-
-            self.data = self.data[data_mask]
-            self.label = self.label[data_mask]
-
-    def __len__(self):
-        return self.data.shape[0]
-
-    def __getitem__(self, index):
-        cond_idx = self.cond_idx
-        im = self.data[index] / 255.
-
-        if cond_idx != -1:
-            label = self.label[index, cond_idx * 6:(cond_idx + 1) * 6]
-        else:
-            label = self.label[index]
-
-        image_size = 64
-
-        if FLAGS.datasource == 'default':
-            im_corrupt = im + 0.3 * np.random.randn(image_size, image_size, 3)
-        elif FLAGS.datasource == 'random':
-            im_corrupt = 0.5 + 0.5 * np.random.randn(image_size, image_size, 3)
 
         return im_corrupt, im, label
 

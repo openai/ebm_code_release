@@ -10,16 +10,11 @@ FLAGS = flags.FLAGS
 
 
 class MnistNet(object):
-    """Construct the convolutional network specified in MAML"""
-
-    def __init__(self, dim_input=1, num_channels=1, num_filters=64, dim_output=1):
+    def __init__(self, num_channels=1, num_filters=64):
 
         self.channels = num_channels
         self.dim_hidden = num_filters
-        self.dim_output = dim_output
-        self.dim_input = dim_input
         self.datasource = FLAGS.datasource
-        self.img_size = int(np.sqrt(self.dim_input/self.channels))
 
         if FLAGS.cclass:
             self.label_size = 10
@@ -33,12 +28,14 @@ class MnistNet(object):
         conv_initializer =  tf.contrib.layers.xavier_initializer_conv2d(dtype=dtype)
         fc_initializer =  tf.contrib.layers.xavier_initializer(dtype=dtype)
 
+        classes = 1
+
         with tf.variable_scope(scope):
-            init_conv_weight(weights, 'c1_pre', 3, 1, 32)
-            init_conv_weight(weights, 'c1', 4, 32, self.dim_hidden, classes=classes)
+            init_conv_weight(weights, 'c1_pre', 3, 1, 64)
+            init_conv_weight(weights, 'c1', 4, 64, self.dim_hidden, classes=classes)
             init_conv_weight(weights, 'c2', 4, self.dim_hidden, 2*self.dim_hidden, classes=classes)
-            init_conv_weight(weights, 'c3', 4, 2*self.dim_hidden, 2*self.dim_hidden, classes=classes)
-            init_fc_weight(weights, 'fc_dense', 2*4*4*self.dim_hidden, 2*self.dim_hidden, spec_norm=True)
+            init_conv_weight(weights, 'c3', 4, 2*self.dim_hidden, 4*self.dim_hidden, classes=classes)
+            init_fc_weight(weights, 'fc_dense', 4*4*4*self.dim_hidden, 2*self.dim_hidden, spec_norm=True)
             init_fc_weight(weights, 'fc5', 2*self.dim_hidden, 1, spec_norm=False)
 
         if FLAGS.cclass:
@@ -49,8 +46,8 @@ class MnistNet(object):
 
     def forward(self, inp, weights, reuse=False, scope='', stop_grad=False, label=None, **kwargs):
         channels = self.channels
-        inp = tf.reshape(inp, [-1, self.img_size, self.img_size, channels])
         weights = weights.copy()
+        inp = tf.reshape(inp, (tf.shape(inp)[0], 28, 28, 1))
 
         if FLAGS.swish_act:
             act = swish
@@ -72,31 +69,24 @@ class MnistNet(object):
             inp = conv_cond_concat(inp, label_d)
 
         h1 = smart_conv_block(inp, weights, reuse, 'c1_pre', use_stride=False, activation=act)
-        h2 = smart_conv_block(h1, weights, reuse, 'c1', use_stride=True, downsample=True, label=label, extra_bias=True, activation=act)
-        h3 = smart_conv_block(h2, weights, reuse, 'c2', use_stride=True, downsample=True, label=label, extra_bias=True, activation=act)
-        h4 = smart_conv_block(h3, weights, reuse, 'c3', use_stride=True, downsample=True, label=label, use_scale=True, extra_bias=True, activation=act)
+        h2 = smart_conv_block(h1, weights, reuse, 'c1', use_stride=True, downsample=True, label=label, extra_bias=False, activation=act)
+        h3 = smart_conv_block(h2, weights, reuse, 'c2', use_stride=True, downsample=True, label=label, extra_bias=False, activation=act)
+        h4 = smart_conv_block(h3, weights, reuse, 'c3', use_stride=True, downsample=True, label=label, use_scale=False, extra_bias=False, activation=act)
 
         h5 = tf.reshape(h4, [-1, np.prod([int(dim) for dim in h4.get_shape()[1:]])])
         h6 = act(smart_fc_block(h5, weights, reuse, 'fc_dense'))
-        hidden6 = smart_fc_block(h5, weights, reuse, 'fc5')
+        hidden6 = smart_fc_block(h6, weights, reuse, 'fc5')
 
         return hidden6
 
 
 class DspritesNet(object):
-    """Construct the convolutional network specified in MAML"""
-
-    def __init__(self, dim_input=1, num_channels=1, num_filters=64, dim_output=1, cond_size=False, cond_shape=False, cond_pos=False,
+    def __init__(self, num_channels=1, num_filters=64, cond_size=False, cond_shape=False, cond_pos=False,
                  cond_rot=False, label_size=1):
 
         self.channels = num_channels
         self.dim_hidden = num_filters
-        self.dim_output = dim_output
-        self.dim_input = dim_input
         self.img_size = 64
-
-        range_img = tf.cast(tf.range(self.img_size) / self.img_size, tf.float32)
-
         self.label_size = label_size
 
         if FLAGS.cclass:
@@ -156,7 +146,6 @@ class DspritesNet(object):
     def forward(self, inp, weights, reuse=False, scope='', stop_grad=False, label=None, stop_at_grad=False, stop_batch=False):
         channels = self.channels
         batch_size = tf.shape(inp)[0]
-        inp = tf.reshape(inp, [-1, self.img_size, self.img_size, channels])
 
         if FLAGS.swish_act:
             act = swish
@@ -193,14 +182,10 @@ class DspritesNet(object):
 
 
 class ResNet32(object):
-    """Construct the convolutional network specified in MAML"""
-
-    def __init__(self, dim_input=1, num_channels=3, num_filters=128, dim_output=1):
+    def __init__(self, num_channels=3, num_filters=128):
 
         self.channels = num_channels
         self.dim_hidden = num_filters
-        self.dim_output = dim_output
-        self.dim_input = dim_input
         self.groupsort = groupsort()
 
     def construct_weights(self, scope=''):
@@ -228,7 +213,7 @@ class ResNet32(object):
 
         return weights
 
-    def forward(self, inp, weights, reuse=False, scope='', stop_grad=False, label=None, stop_at_grad=False, stop_batch=False, return_logit=False):
+    def forward(self, inp, weights, reuse=False, scope='', stop_grad=False, label=None, stop_at_grad=False, stop_batch=False):
         weights = weights.copy()
         batch = tf.shape(inp)[0]
 
@@ -268,21 +253,14 @@ class ResNet32(object):
 
         energy = hidden6
 
-        if return_logit:
-            return compact
-        else:
-            return energy
+        return energy
 
 
 class ResNet32Large(object):
-    """Construct the convolutional network specified in MAML"""
-
-    def __init__(self, dim_input=1, num_channels=3, num_filters=128, dim_output=1, train=False):
+    def __init__(self, num_channels=3, num_filters=128, train=False):
 
         self.channels = num_channels
         self.dim_hidden = num_filters
-        self.dim_output = dim_output
-        self.dim_input = dim_input
         self.dropout = train
         self.train = train
 
@@ -313,7 +291,7 @@ class ResNet32Large(object):
 
         return weights
 
-    def forward(self, inp, weights, reuse=False, scope='', stop_grad=False, label=None, stop_at_grad=False, stop_batch=False, return_logit=False):
+    def forward(self, inp, weights, reuse=False, scope='', stop_grad=False, label=None, stop_at_grad=False, stop_batch=False):
         weights = weights.copy()
         batch = tf.shape(inp)[0]
 
@@ -363,21 +341,14 @@ class ResNet32Large(object):
 
         energy = hidden6
 
-        if return_logit:
-            return compact
-        else:
-            return energy
+        return energy
 
 
 class ResNet32Wider(object):
-    """Construct the convolutional network specified in MAML"""
-
-    def __init__(self, dim_input=1, num_channels=3, num_filters=128, dim_output=1, train=False):
+    def __init__(self, num_channels=3, num_filters=128, train=False):
 
         self.channels = num_channels
         self.dim_hidden = num_filters
-        self.dim_output = dim_output
-        self.dim_input = dim_input
         self.dropout = train
         self.train = train
 
@@ -410,7 +381,7 @@ class ResNet32Wider(object):
 
         return weights
 
-    def forward(self, inp, weights, reuse=False, scope='', stop_grad=False, label=None, stop_at_grad=False, stop_batch=False, return_logit=False):
+    def forward(self, inp, weights, reuse=False, scope='', stop_grad=False, label=None, stop_at_grad=False, stop_batch=False):
         weights = weights.copy()
         batch = tf.shape(inp)[0]
 
@@ -465,21 +436,14 @@ class ResNet32Wider(object):
         hidden6 = smart_fc_block(hidden5, weights, reuse, 'fc5')
         energy = hidden6
 
-        if return_logit:
-            return hidden9
-        else:
-            return energy
+        return energy
 
 
 class ResNet32Larger(object):
-    """Construct the convolutional network specified in MAML"""
-
-    def __init__(self, dim_input=1, num_channels=3, num_filters=128, dim_output=1):
+    def __init__(self, num_channels=3, num_filters=128):
 
         self.channels = num_channels
         self.dim_hidden = num_filters
-        self.dim_output = dim_output
-        self.dim_input = dim_input
 
     def construct_weights(self, scope=''):
         weights = {}
@@ -513,12 +477,9 @@ class ResNet32Larger(object):
 
             init_attention_weight(weights, 'atten', 2*self.dim_hidden, self.dim_hidden / 2, trainable_gamma=True)
 
-            # if FLAGS.cclass:
-            #     weights['cond_proj'] = get_weight('proj_embed', [classes, 2*self.dim_hidden]) / 5.
-
         return weights
 
-    def forward(self, inp, weights, reuse=False, scope='', stop_grad=False, label=None, stop_at_grad=False, stop_batch=False, return_logit=False):
+    def forward(self, inp, weights, reuse=False, scope='', stop_grad=False, label=None, stop_at_grad=False, stop_batch=False):
         weights = weights.copy()
         batch = tf.shape(inp)[0]
 
@@ -566,20 +527,91 @@ class ResNet32Larger(object):
             hidden6 = tf.nn.relu(hidden9)
         hidden5 = tf.reduce_sum(hidden6, [1, 2])
 
-        # # Use a fully connected network
-        # hidden6 = tf.reshape(hidden6, (batch, -1))
-        # hidden5 = tf.nn.leaky_relu(smart_fc_block(hidden6, weights, reuse, 'fc_dense'))
-
         hidden6 = smart_fc_block(hidden5, weights, reuse, 'fc5')
-
-        # if FLAGS.cclass:
-        #     embed = tf.matmul(label, weights['cond_proj'])
-        #     class_energy = tf.reduce_sum(embed * hidden5, axis=[1])
-        #     hidden6 = hidden6 + class_energy
 
         energy = hidden6
 
-        if return_logit:
-            return compact
+        return energy
+
+
+class ResNet128(object):
+    """Construct the convolutional network specified in MAML"""
+
+    def __init__(self, num_channels=3, num_filters=64, train=False):
+
+        self.channels = num_channels
+        self.dim_hidden = num_filters
+        self.dropout = train
+        self.train = train
+
+    def construct_weights(self, scope=''):
+        weights = {}
+        dtype = tf.float32
+
+        classes = 1000
+
+        with tf.variable_scope(scope):
+            # First block
+            init_conv_weight(weights, 'c1_pre', 3, self.channels, 64)
+            init_res_weight(weights, 'res_optim', 3, 64, self.dim_hidden, classes=classes)
+            init_res_weight(weights, 'res_3', 3, self.dim_hidden, 2*self.dim_hidden, classes=classes)
+            init_res_weight(weights, 'res_5', 3, 2*self.dim_hidden, 4*self.dim_hidden, classes=classes)
+            init_res_weight(weights, 'res_7', 3, 4*self.dim_hidden, 8*self.dim_hidden, classes=classes)
+            init_res_weight(weights, 'res_9', 3, 8*self.dim_hidden, 8*self.dim_hidden, classes=classes)
+            init_res_weight(weights, 'res_10', 3, 8*self.dim_hidden, 8*self.dim_hidden, classes=classes)
+            init_fc_weight(weights, 'fc5', 8*self.dim_hidden , 1, spec_norm=False)
+
+
+            init_attention_weight(weights, 'atten', self.dim_hidden, self.dim_hidden / 2, trainable_gamma=True)
+
+        return weights
+
+    def forward(self, inp, weights, reuse=False, scope='', stop_grad=False, label=None, stop_at_grad=False, stop_batch=False):
+        weights = weights.copy()
+        batch = tf.shape(inp)[0]
+
+        if not FLAGS.cclass:
+            label = None
+
+
+        if stop_grad:
+            for k, v in weights.items():
+                if type(v) == dict:
+                    v = v.copy()
+                    weights[k] = v
+                    for k_sub, v_sub in v.items():
+                        v[k_sub] = tf.stop_gradient(v_sub)
+                else:
+                    weights[k] = tf.stop_gradient(v)
+
+        if FLAGS.swish_act:
+            act = swish
         else:
-            return energy
+            act = tf.nn.leaky_relu
+
+        dropout = self.dropout
+        train = self.train
+
+        # Make sure gradients are modified a bit
+        inp = smart_conv_block(inp, weights, reuse, 'c1_pre', use_stride=False, activation=act)
+        hidden1 = smart_res_block(inp, weights, reuse, 'res_optim', label=label, dropout=dropout, train=train, downsample=True, adaptive=False)
+
+        if FLAGS.use_attention:
+            hidden1 = smart_atten_block(hidden1, weights, reuse, 'atten', stop_at_grad=stop_at_grad)
+
+        hidden2 = smart_res_block(hidden1, weights, reuse, 'res_3', stop_batch=stop_batch, downsample=True, adaptive=True, label=label, dropout=dropout, train=train, act=act)
+        hidden3 = smart_res_block(hidden2, weights, reuse, 'res_5', stop_batch=stop_batch, downsample=True, adaptive=True, label=label, dropout=dropout, train=train, act=act)
+        hidden4 = smart_res_block(hidden3, weights, reuse, 'res_7', stop_batch=stop_batch, label=label, dropout=dropout, train=train, act=act, downsample=True, adaptive=True)
+        hidden5 = smart_res_block(hidden4, weights, reuse, 'res_9', stop_batch=stop_batch, label=label, dropout=dropout, train=train, act=act, downsample=True, adaptive=False)
+        hidden6 = smart_res_block(hidden5, weights, reuse, 'res_10', stop_batch=stop_batch, label=label, dropout=dropout, train=train, act=act, downsample=False, adaptive=False)
+
+        if FLAGS.swish_act:
+            hidden6 = act(hidden6)
+        else:
+            hidden6 = tf.nn.relu(hidden6)
+
+        hidden5 = tf.reduce_sum(hidden6, [1, 2])
+        hidden6 = smart_fc_block(hidden5, weights, reuse, 'fc5')
+        energy = hidden6
+
+        return energy

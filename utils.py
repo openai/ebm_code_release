@@ -692,8 +692,6 @@ def conv_block(
             dim = tf.shape(bias_batch)[1]
             bias = tf.reshape(bias_batch, (batch, 1, 1, dim))
 
-            print(bias.get_shape())
-
         inp = inp + bias
 
     if not use_stride:

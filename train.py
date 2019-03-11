@@ -2,8 +2,8 @@ import tensorflow as tf
 import numpy as np
 from tensorflow.python.platform import flags
 
-from data import Imagenet, Cifar10, DSprites, Mnist
-from models import DspritesNet, ResNet32, ResNet32Large, ResNet32Larger, ResNet32Wider, MnistNet
+from data import Imagenet, Cifar10, DSprites, Mnist, TFImagenetLoader
+from models import DspritesNet, ResNet32, ResNet32Large, ResNet32Larger, ResNet32Wider, MnistNet, ResNet128
 import os.path as osp
 import os
 from baselines.logger import TensorBoardOutputFormat
@@ -21,6 +21,10 @@ from scipy.misc import imsave
 import matplotlib.pyplot as plt
 from hmc import hmc
 
+from mpi4py import MPI
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+
 import horovod.tensorflow as hvd
 hvd.init()
 
@@ -36,8 +40,8 @@ FLAGS = flags.FLAGS
 # Dataset Options
 flags.DEFINE_string('datasource', 'random',
     'initialization for chains, either random or default (decorruption)')
-flags.DEFINE_string('dataset','omniglot',
-    'omniglot or imagenet or omniglotfull or cifar10 or mnist or dsprites or 2d')
+flags.DEFINE_string('dataset','mnist',
+    'dsprites, cifar10, imagenet (32x32) or imagenetfull (128x128)')
 flags.DEFINE_integer('batch_size', 256, 'Size of inputs')
 flags.DEFINE_bool('single', False, 'whether to debug by training on a single image')
 flags.DEFINE_integer('data_workers', 4,
@@ -148,7 +152,7 @@ def log_image(im, logger, tag, step=0):
 
 def rescale_im(image):
     image = np.clip(image, 0, FLAGS.rescale)
-    if FLAGS.dataset == 'omniglot' or FLAGS.dataset == 'omniglotfull' or FLAGS.dataset == 'mnist' or FLAGS.dataset == 'dsprites':
+    if FLAGS.dataset == 'mnist' or FLAGS.dataset == 'dsprites':
         return ((FLAGS.rescale - image) * 256 / FLAGS.rescale).astype(np.uint8)
     else:
         return (image * 256 / FLAGS.rescale).astype(np.uint8)
@@ -203,7 +207,7 @@ def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
         *gvs_dict.keys()]
     output = [train_op, x_mod]
 
-    replay_buffer = ReplayBuffer(50000)
+    replay_buffer = ReplayBuffer(10000)
     itr = resume_iter
     x_mod = None
     gd_steps = 1
@@ -327,20 +331,28 @@ def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
                                 0, 1, (FLAGS.batch_size)) > 0.05)
                         data_corrupt[replay_mask] = replay_batch[replay_mask]
 
-                    if FLAGS.dataset == 'cifar10' or FLAGS.dataset == 'imagenet':
-                        if len(replay_buffer) > 128:
+                    if FLAGS.dataset == 'cifar10' or FLAGS.dataset == 'imagenet' or FLAGS.dataset == 'imagenetfull':
+                        n = 128
+
+                        if FLAGS.dataset == "imagenetfull":
+                            n = 32
+
+                        if len(replay_buffer) > n:
                             feed_dict[X_NOISE] = decompress_x_mod(
-                                replay_buffer.sample(128))
+                                replay_buffer.sample(n))
+                        elif FLAGS.dataset == 'imagenetfull':
+                            feed_dict[X_NOISE] = np.random.uniform(
+                                0, FLAGS.rescale, (n, 128, 128, 3))
                         else:
                             feed_dict[X_NOISE] = np.random.uniform(
-                                0, FLAGS.rescale, (128, 32, 32, 3))
+                                0, FLAGS.rescale, (n, 32, 32, 3))
 
                         if FLAGS.dataset == 'cifar10':
-                            label = np.eye(10)[np.random.randint(0, 10, (128))]
+                            label = np.eye(10)[np.random.randint(0, 10, (n))]
                         else:
                             label = np.eye(1000)[
                                 np.random.randint(
-                                    0, 1000, (128))]
+                                    0, 1000, (n))]
                     else:
                         feed_dict[X_NOISE] = data_corrupt
 
@@ -502,6 +514,7 @@ def test(target_vars, saver, sess, logger, dataloader):
 
 
 def main():
+    print("Local rank: ", hvd.local_rank(), hvd.size())
 
     logdir = osp.join(FLAGS.logdir, FLAGS.exp)
     if hvd.rank() == 0:
@@ -517,7 +530,6 @@ def main():
         dataset = Cifar10(augment=FLAGS.augment, rescale=FLAGS.rescale)
         test_dataset = Cifar10(train=False, rescale=FLAGS.rescale)
         channel_num = 3
-        dim_input = 32 * 32 * 3
 
         X_NOISE = tf.placeholder(shape=(None, 32, 32, 3), dtype=tf.float32)
         X = tf.placeholder(shape=(None, 32, 32, 3), dtype=tf.float32)
@@ -526,60 +538,58 @@ def main():
 
         if FLAGS.large_model:
             model = ResNet32Large(
-                dim_input=dim_input,
                 num_channels=channel_num,
                 num_filters=128,
-                dim_output=dim_output,
                 train=True)
         elif FLAGS.larger_model:
             model = ResNet32Larger(
-                dim_input=dim_input,
                 num_channels=channel_num,
-                num_filters=128,
-                dim_output=dim_output)
+                num_filters=128)
         elif FLAGS.wider_model:
             model = ResNet32Wider(
-                dim_input=dim_input,
                 num_channels=channel_num,
-                num_filters=192,
-                dim_output=dim_output)
+                num_filters=192)
         else:
             model = ResNet32(
-                dim_input=dim_input,
                 num_channels=channel_num,
-                num_filters=128,
-                dim_output=dim_output)
+                num_filters=128)
 
     elif FLAGS.dataset == 'imagenet':
-        dataset = Imagenet()
+        dataset = Imagenet(train=True)
+        test_dataset = Imagenet(train=False)
         channel_num = 3
-        dim_input = 32 * 32 * 3
         X_NOISE = tf.placeholder(shape=(None, 32, 32, 3), dtype=tf.float32)
         X = tf.placeholder(shape=(None, 32, 32, 3), dtype=tf.float32)
         LABEL = tf.placeholder(shape=(None, 1000), dtype=tf.float32)
         LABEL_POS = tf.placeholder(shape=(None, 1000), dtype=tf.float32)
 
         model = ResNet32Wider(
-            dim_input=dim_input,
             num_channels=channel_num,
-            num_filters=256,
-            dim_output=dim_output)
+            num_filters=256)
+
+    elif FLAGS.dataset == 'imagenetfull':
+        channel_num = 3
+        X_NOISE = tf.placeholder(shape=(None, 128, 128, 3), dtype=tf.float32)
+        X = tf.placeholder(shape=(None, 128, 128, 3), dtype=tf.float32)
+        LABEL = tf.placeholder(shape=(None, 1000), dtype=tf.float32)
+        LABEL_POS = tf.placeholder(shape=(None, 1000), dtype=tf.float32)
+
+        model = ResNet128(
+            num_channels=channel_num,
+            num_filters=64)
 
     elif FLAGS.dataset == 'mnist':
         dataset = Mnist()
         test_dataset = dataset
         channel_num = 1
-        dim_input = 28 * 28 * 1
         X_NOISE = tf.placeholder(shape=(None, 28, 28), dtype=tf.float32)
         X = tf.placeholder(shape=(None, 28, 28), dtype=tf.float32)
         LABEL = tf.placeholder(shape=(None, 10), dtype=tf.float32)
         LABEL_POS = tf.placeholder(shape=(None, 10), dtype=tf.float32)
 
         model = MnistNet(
-            dim_input=dim_input,
             num_channels=channel_num,
-            num_filters=FLAGS.num_filters,
-            dim_output=dim_output)
+            num_filters=FLAGS.num_filters)
 
     elif FLAGS.dataset == 'dsprites':
         dataset = DSprites(
@@ -589,8 +599,6 @@ def main():
             cond_rot=FLAGS.cond_rot)
         test_dataset = dataset
         channel_num = 1
-        dim_input = 64 * 64 * 1
-        dim_output = 1
 
         X_NOISE = tf.placeholder(shape=(None, 64, 64), dtype=tf.float32)
         X = tf.placeholder(shape=(None, 64, 64), dtype=tf.float32)
@@ -621,28 +629,25 @@ def main():
             LABEL_POS = tf.placeholder(shape=(None, 3), dtype=tf.float32)
 
         model = DspritesNet(
-            dim_input=dim_input,
             num_channels=channel_num,
             num_filters=FLAGS.num_filters,
-            dim_output=dim_output,
             cond_size=FLAGS.cond_size,
             cond_shape=FLAGS.cond_shape,
             cond_pos=FLAGS.cond_pos,
             cond_rot=FLAGS.cond_rot)
 
     print("Done loading...")
-    data_loader = DataLoader(
-        dataset,
-        batch_size=FLAGS.batch_size,
-        num_workers=FLAGS.data_workers,
-        drop_last=True,
-        shuffle=True)
-    data_loader_test = DataLoader(
-        test_dataset,
-        batch_size=FLAGS.batch_size,
-        num_workers=FLAGS.data_workers,
-        drop_last=True,
-        shuffle=True)
+
+    if FLAGS.dataset == "imagenetfull":
+        # In the case of full imagenet, use custom_tensorflow dataloader
+        data_loader = TFImagenetLoader('train', FLAGS.batch_size, hvd.rank(), hvd.size(), rescale=FLAGS.rescale)
+    else:
+        data_loader = DataLoader(
+            dataset,
+            batch_size=FLAGS.batch_size,
+            num_workers=FLAGS.data_workers,
+            drop_last=True,
+            shuffle=True)
 
     batch_size = FLAGS.batch_size
 
@@ -751,13 +756,13 @@ def main():
                 if FLAGS.stop_proj_norm:
                     x_grad = tf.stop_gradient(x_grad)
 
-            def energy(x):
-                return FLAGS.temperature * \
-                    model.forward(x, weights[0], label=LABEL_SPLIT[j], reuse=True)
-
             # Clip gradient norm for now
             if FLAGS.hmc:
                 # Step size should be tuned to get around 65% acceptance
+                def energy(x):
+                    return FLAGS.temperature * \
+                        model.forward(x, weights[0], label=LABEL_SPLIT[j], reuse=True)
+
                 x_last = hmc(x_mod, 0.0045, 10, energy)
             else:
                 x_last = x_mod - (lr) * x_grad
@@ -767,25 +772,22 @@ def main():
 
             print("Building loop {} ...".format(i))
 
-            energy_negs.append(
-                model.forward(
-                    tf.stop_gradient(x_mod),
-                    weights[0],
-                    label=LABEL_SPLIT[j],
-                    stop_at_grad=False,
-                    reuse=True))
+        energy_negs.append(
+            model.forward(
+                tf.stop_gradient(x_mod),
+                weights[0],
+                label=LABEL_SPLIT[j],
+                stop_at_grad=False,
+                reuse=True))
 
         test_x_mod = x_mod
 
         temp = FLAGS.temperature
 
         energy_neg = energy_negs[-1]
-
-        loss_energy = [tf.clip_by_value(
-            temp * model.forward(x_mod, weights[0], reuse=True, label=LABEL, stop_grad=True), -1e5, 1e5)]
-        loss_energy = tf.concat(loss_energy, axis=0)
         x_off = tf.reduce_mean(
             tf.abs(x_mod[:tf.shape(X_SPLIT[j])[0]] - X_SPLIT[j]))
+
         loss_energy = model.forward(
             x_mod,
             weights[0],
@@ -903,7 +905,8 @@ def main():
     if (FLAGS.resume_iter != -1 or not FLAGS.train) and hvd.rank() == 0:
         model_file = osp.join(logdir, 'model_{}'.format(FLAGS.resume_iter))
         resume_itr = FLAGS.resume_iter
-        saver.restore(sess, model_file)
+        # saver.restore(sess, model_file)
+        optimistic_restore(sess, model_file)
 
     sess.run(hvd.broadcast_global_variables(0))
     print("Initializing variables...")
