@@ -16,7 +16,10 @@ Download all saved models in the folder <>
 
 To generate images for CIFAR-10 and Imagenet run
 
-
+All code supports horovod execution, so model training can be speeded up substantially by using multiple different workers.
+```
+mpiexec -n <worker_num>  <script>
+```
 
 ## Image Manipulation
 
@@ -34,6 +37,10 @@ Code
 
 To evaluate on the dSprites datasets, first download the dataset [here](https://github.com/deepmind/dsprites-dataset)
 
+To train conditional models
+```
+python train.py
+```
 Models can be combined by
 
 To test out of distribution generalization test.
