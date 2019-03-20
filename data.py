@@ -156,6 +156,9 @@ class TFImagenetLoader(Dataset):
     def __iter__(self):
         return self
 
+    def __len__(self):
+        return self.im_length
+
 class CelebA(Dataset):
 
     def __init__(self):
@@ -346,12 +349,13 @@ class Svhn(Dataset):
 
 
 class Mnist(Dataset):
-    def __init__(self):
+    def __init__(self, train=True, rescale=1.0):
         self.data = MNIST(
             "/root/mnist",
             transform=transforms.ToTensor(),
-            download=True)
+            download=True, train=train)
         self.labels = np.eye(10)
+        self.rescale = rescale
 
     def __len__(self):
         return len(self.data)
@@ -360,12 +364,16 @@ class Mnist(Dataset):
         im, label = self.data[index]
         label = self.labels[label]
         im = im.squeeze()
+        # im = im.numpy() / 2 + np.random.uniform(0, 0.5, (28, 28))
+        # im = im.numpy() / 2 + 0.2
+        im = im.numpy() / 256 * 255 + np.random.uniform(0, 1. / 256, (28, 28))
+        im = im * self.rescale
         image_size = 28
 
         if FLAGS.datasource == 'default':
             im_corrupt = im + 0.3 * np.random.randn(image_size, image_size)
         elif FLAGS.datasource == 'random':
-            im_corrupt = 0.5 + 0.5 * np.random.randn(image_size, image_size)
+            im_corrupt = np.random.uniform(0, self.rescale, (28, 28))
 
         return im_corrupt, im, label
 

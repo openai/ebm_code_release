@@ -143,9 +143,11 @@ class DspritesNet(object):
 
         return weights
 
-    def forward(self, inp, weights, reuse=False, scope='', stop_grad=False, label=None, stop_at_grad=False, stop_batch=False):
+    def forward(self, inp, weights, reuse=False, scope='', stop_grad=False, label=None, stop_at_grad=False, stop_batch=False, return_logit=False):
         channels = self.channels
         batch_size = tf.shape(inp)[0]
+
+        inp = tf.reshape(inp, (batch_size, 64, 64, 1))
 
         if FLAGS.swish_act:
             act = swish
@@ -175,10 +177,13 @@ class DspritesNet(object):
 
         hidden6 = tf.reshape(h5, (tf.shape(h5)[0], -1))
         hidden7 = act(smart_fc_block(hidden6, weights, reuse, 'fc_dense'))
-
         energy = smart_fc_block(hidden7, weights, reuse, 'fc5')
 
-        return energy
+        if return_logit:
+            return hidden7
+        else:
+            return energy
+
 
 
 class ResNet32(object):
@@ -562,7 +567,7 @@ class ResNet128(object):
             init_fc_weight(weights, 'fc5', 8*self.dim_hidden , 1, spec_norm=False)
 
 
-            init_attention_weight(weights, 'atten', self.dim_hidden, self.dim_hidden / 2, trainable_gamma=True)
+            init_attention_weight(weights, 'atten', self.dim_hidden, self.dim_hidden / 2., trainable_gamma=True)
 
         return weights
 

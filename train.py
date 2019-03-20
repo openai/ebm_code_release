@@ -52,8 +52,8 @@ flags.DEFINE_string('logdir', '/mnt/nfs/yilundu/ebm_code_release/cachedir',
     'location where log of experiments will be stored')
 flags.DEFINE_string('exp', 'default', 'name of experiments')
 flags.DEFINE_integer('log_interval', 10, 'log outputs every so many batches')
-flags.DEFINE_integer('save_interval', 1000,'save outputs every so many batches')
-flags.DEFINE_integer('test_interval', 1000,'evaluate outputs every so many batches')
+flags.DEFINE_integer('save_interval', 2000,'save outputs every so many batches')
+flags.DEFINE_integer('test_interval', 2000,'evaluate outputs every so many batches')
 flags.DEFINE_integer('resume_iter', -1, 'iteration to resume training from')
 flags.DEFINE_bool('train', True, 'whether to train or test')
 flags.DEFINE_integer('epoch_num', 10000, 'Number of Epochs to train on')
@@ -62,6 +62,7 @@ flags.DEFINE_integer('num_gpus', 1, 'number of gpus to train on')
 
 # EBM Specific Experiments Settings
 flags.DEFINE_float('ml_coeff', 1.0, 'Maximum Likelihood Coefficients')
+flags.DEFINE_float('l2_coeff', 1.0, 'L2 Penalty training')
 flags.DEFINE_bool('cclass', False, 'Whether to conditional training in models')
 flags.DEFINE_bool('model_cclass', False,'use unsupervised clustering to infer fake labels')
 flags.DEFINE_integer('temperature', 1, 'Temperature for energy function')
@@ -78,6 +79,7 @@ flags.DEFINE_float('step_lr', 1.0, 'Size of steps for gradient descent')
 flags.DEFINE_bool('replay_batch', False, 'Use MCMC chains initialized from a replay buffer.')
 flags.DEFINE_bool('hmc', False, 'Whether to use HMC sampling to train models')
 flags.DEFINE_float('noise_scale', 1.,'Relative amount of noise for MCMC')
+flags.DEFINE_bool('pcd', False, 'whether to use pcd training instead')
 
 # Architecture Settings
 flags.DEFINE_integer('num_filters', 64, 'number of filters for conv nets')
@@ -106,7 +108,7 @@ print("{} batch size".format(FLAGS.batch_size))
 
 
 def compress_x_mod(x_mod):
-    x_mod = (256 * np.clip(x_mod, 0, FLAGS.rescale) / FLAGS.rescale).astype(np.uint8)
+    x_mod = (255 * np.clip(x_mod, 0, FLAGS.rescale) / FLAGS.rescale).astype(np.uint8)
     return x_mod
 
 
@@ -153,9 +155,9 @@ def log_image(im, logger, tag, step=0):
 def rescale_im(image):
     image = np.clip(image, 0, FLAGS.rescale)
     if FLAGS.dataset == 'mnist' or FLAGS.dataset == 'dsprites':
-        return ((FLAGS.rescale - image) * 256 / FLAGS.rescale).astype(np.uint8)
+        return (np.clip((FLAGS.rescale - image) * 256 / FLAGS.rescale, 0, 255)).astype(np.uint8)
     else:
-        return (image * 256 / FLAGS.rescale).astype(np.uint8)
+        return (np.clip(image * 256 / FLAGS.rescale, 0, 255)).astype(np.uint8)
 
 
 def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
@@ -242,6 +244,10 @@ def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
                             FLAGS.rescale,
                             FLAGS.batch_size) > 0.05)
                     data_corrupt[replay_mask] = replay_batch[replay_mask]
+
+            if FLAGS.pcd:
+                if x_mod is not None:
+                    data_corrupt = x_mod
 
             feed_dict = {X_NOISE: data_corrupt, X: data, Y: label}
 
@@ -338,13 +344,12 @@ def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
                             n = 32
 
                         if len(replay_buffer) > n:
-                            feed_dict[X_NOISE] = decompress_x_mod(
-                                replay_buffer.sample(n))
+                            data_corrupt = decompress_x_mod(replay_buffer.sample(n))
                         elif FLAGS.dataset == 'imagenetfull':
-                            feed_dict[X_NOISE] = np.random.uniform(
+                            data_corrupt = np.random.uniform(
                                 0, FLAGS.rescale, (n, 128, 128, 3))
                         else:
-                            feed_dict[X_NOISE] = np.random.uniform(
+                            data_corrupt = np.random.uniform(
                                 0, FLAGS.rescale, (n, 32, 32, 3))
 
                         if FLAGS.dataset == 'cifar10':
@@ -353,8 +358,8 @@ def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
                             label = np.eye(1000)[
                                 np.random.randint(
                                     0, 1000, (n))]
-                    else:
-                        feed_dict[X_NOISE] = data_corrupt
+
+                    feed_dict[X_NOISE] = data_corrupt
 
                     feed_dict[X] = data
 
@@ -382,7 +387,7 @@ def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
                         log_image(
                             new_im, logger, 'val_gen_{}'.format(itr), step=i)
 
-                    score, std = get_inception_score(list(try_im))
+                    score, std = get_inception_score(list(try_im), splits=1)
                     print(
                         "Inception score of {} with std of {}".format(
                             score, std))
@@ -400,6 +405,8 @@ def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
                                 FLAGS.exp,
                                 'model_best'))
 
+            if itr > 60000 and FLAGS.dataset == "mnist":
+                assert False
             itr += 1
 
     saver.save(sess, osp.join(FLAGS.logdir, FLAGS.exp, 'model_{}'.format(itr)))
@@ -579,7 +586,7 @@ def main():
             num_filters=64)
 
     elif FLAGS.dataset == 'mnist':
-        dataset = Mnist()
+        dataset = Mnist(rescale=FLAGS.rescale)
         test_dataset = dataset
         channel_num = 1
         X_NOISE = tf.placeholder(shape=(None, 28, 28), dtype=tf.float32)
@@ -721,7 +728,10 @@ def main():
             x_mod), weights[0], label=LABEL_SPLIT[j], stop_at_grad=False, reuse=True)])
         eps_begin = tf.zeros(1)
 
-        for i in range(FLAGS.num_steps):
+        steps = tf.constant(0)
+        c = lambda i, x: tf.less(i, FLAGS.num_steps)
+
+        def langevin_step(counter, x_mod):
             x_mod = x_mod + tf.random_normal(tf.shape(x_mod),
                                              mean=0.0,
                                              stddev=0.005 * FLAGS.rescale * FLAGS.noise_scale)
@@ -732,7 +742,7 @@ def main():
                         weights[0],
                         label=LABEL_SPLIT[j],
                         reuse=True,
-                        stop_at_grad=True,
+                        stop_at_grad=False,
                         stop_batch=True)],
                 axis=0)
 
@@ -740,7 +750,6 @@ def main():
                 FLAGS.temperature * energy_noise, [x_mod, LABEL_SPLIT[j]])
             energy_noise_old = energy_noise
 
-            x_grads.append(x_grad)
             lr = FLAGS.step_lr
 
             if FLAGS.proj_norm != 0.0:
@@ -753,9 +762,6 @@ def main():
                     print("Other types of projection are not supported!!!")
                     assert False
 
-                if FLAGS.stop_proj_norm:
-                    x_grad = tf.stop_gradient(x_grad)
-
             # Clip gradient norm for now
             if FLAGS.hmc:
                 # Step size should be tuned to get around 65% acceptance
@@ -763,14 +769,23 @@ def main():
                     return FLAGS.temperature * \
                         model.forward(x, weights[0], label=LABEL_SPLIT[j], reuse=True)
 
-                x_last = hmc(x_mod, 0.0045, 10, energy)
+                x_last = hmc(x_mod, 15., 10, energy)
             else:
                 x_last = x_mod - (lr) * x_grad
 
             x_mod = x_last
             x_mod = tf.clip_by_value(x_mod, 0, FLAGS.rescale)
 
-            print("Building loop {} ...".format(i))
+            counter = counter + 1
+
+            return counter, x_mod
+
+        steps, x_mod = tf.while_loop(c, langevin_step, (steps, x_mod))
+
+        energy_eval = model.forward(x_mod, weights[0], label=LABEL_SPLIT[j],
+                                    stop_at_grad=False, reuse=True)
+        x_grad = tf.gradients(FLAGS.temperature * energy_eval, [x_mod])[0]
+        x_grads.append(x_grad)
 
         energy_negs.append(
             model.forward(
@@ -833,7 +848,7 @@ def main():
                 loss_total = loss_total + tf.reduce_mean(loss_energy)
 
             loss_total = loss_total + \
-                (tf.reduce_mean(tf.square(energy_pos)) + tf.reduce_mean(tf.square((energy_neg))))
+                FLAGS.l2_coeff * (tf.reduce_mean(tf.square(energy_pos)) + tf.reduce_mean(tf.square((energy_neg))))
 
             print("Started gradient computation...")
             gvs = optimizer.compute_gradients(loss_total)
@@ -859,7 +874,7 @@ def main():
         target_vars['energy_pos'] = energy_pos
         target_vars['energy_start'] = energy_negs[0]
 
-        if len(x_grads) > 1:
+        if len(x_grads) >= 1:
             target_vars['x_grad'] = x_grads[-1]
             target_vars['x_grad_first'] = x_grads[0]
         else:
@@ -886,7 +901,7 @@ def main():
     sess = tf.Session(config=config)
 
     saver = loader = tf.train.Saver(
-        max_to_keep=10, keep_checkpoint_every_n_hours=6)
+        max_to_keep=30, keep_checkpoint_every_n_hours=6)
 
     total_parameters = 0
     for variable in tf.trainable_variables():

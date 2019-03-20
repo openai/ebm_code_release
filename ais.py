@@ -3,8 +3,8 @@ import math
 from hmc import hmc
 from tensorflow.python.platform import flags
 from torch.utils.data import DataLoader
-from models import DspritesNet, ResNet32, FCNet, ResNet32Large, ResNet32Wider
-from data import Cifar10, Mnist, DSprites, Box2D
+from models import DspritesNet, ResNet32, ResNet32Large, ResNet32Wider, MnistNet
+from data import Cifar10, Mnist, DSprites
 from scipy.misc import logsumexp
 from scipy.misc import imsave
 from utils import optimistic_restore
@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 flags.DEFINE_string('datasource', 'random', 'default or noise or negative or single')
 flags.DEFINE_string('dataset', 'cifar10', 'cifar10 or mnist or dsprites or 2d or toy Gauss')
-flags.DEFINE_string('logdir', '/mnt/nfs/yilundu/pot_kmeans/cachedir', 'location where log of experiments will be stored')
+flags.DEFINE_string('logdir', '/mnt/nfs/yilundu/ebm_code_release/cachedir', 'location where log of experiments will be stored')
 flags.DEFINE_string('exp', 'default', 'name of experiments')
 flags.DEFINE_integer('data_workers', 5, 'Number of different data workers to load data in parallel')
 flags.DEFINE_integer('batch_size', 16, 'Size of inputs')
@@ -34,6 +34,7 @@ flags.DEFINE_bool('cclass', False, 'Whether to evaluate the log likelihood of co
 flags.DEFINE_bool('single', False, 'Whether to evaluate the log likelihood of conditional model or not')
 flags.DEFINE_bool('large_model', False, 'Use large model to evaluate')
 flags.DEFINE_bool('wider_model', False, 'Use large model to evaluate')
+flags.DEFINE_float('alr', 0.0045, 'Learning rate to use for HMC steps')
 
 FLAGS = flags.FLAGS
 
@@ -129,14 +130,6 @@ def ancestral_sample(e_func, weights, batch_size=128, prop_dist=10, temp=1, hmc_
 def main():
 
     # Initialize dataset
-    if FLAGS.dataset == 'omniglot':
-        dataset = OmniglotCharacter()
-        channel_num = 1
-        dim_input = 28 * 28
-    if FLAGS.dataset == 'omniglotfull':
-        dataset = OmniglotFull()
-        channel_num = 1
-        dim_input = 28 * 28
     if FLAGS.dataset == 'cifar10':
         dataset = Cifar10(train=False, rescale=FLAGS.rescale)
         channel_num = 3
@@ -146,7 +139,7 @@ def main():
         channel_num = 3
         dim_input = 64 * 64 * 3
     elif FLAGS.dataset == 'mnist':
-        dataset = Mnist()
+        dataset = Mnist(train=False, rescale=FLAGS.rescale)
         channel_num = 1
         dim_input = 28 * 28 * 1
     elif FLAGS.dataset == 'dsprites':
@@ -160,16 +153,16 @@ def main():
     data_loader = DataLoader(dataset, batch_size=FLAGS.batch_size, num_workers=FLAGS.data_workers, drop_last=False, shuffle=True)
 
     if FLAGS.dataset == 'mnist':
-        model = MnistNet(dim_input=dim_input, num_channels=channel_num, num_filters=FLAGS.num_filters, dim_output=dim_output)
+        model = MnistNet(num_channels=channel_num)
     elif FLAGS.dataset == 'cifar10':
         if FLAGS.large_model:
             model = ResNet32Large(num_filters=128)
         elif FLAGS.wider_model:
             model = ResNet32Wider(num_filters=192)
         else:
-            model = ResNet32(dim_input=dim_input, num_channels=channel_num, num_filters=128, dim_output=dim_output)
+            model = ResNet32(num_channels=channel_num, num_filters=128)
     elif FLAGS.dataset == 'dsprites':
-        model = DspritesNet(dim_input=dim_input, num_channels=channel_num, num_filters=FLAGS.num_filters, dim_output=dim_output)
+        model = DspritesNet(num_channels=channel_num, num_filters=FLAGS.num_filters)
 
     weights = model.construct_weights('context_{}'.format(0))
 
@@ -204,15 +197,21 @@ def main():
             e_pos_list.extend(list(e_pos))
 
         print(len(e_pos_list))
-        print("Positive sample average energy ", np.mean(e_pos_list), np.std(e_pos_list))
+        print("Positive sample probability ", np.mean(e_pos_list), np.std(e_pos_list))
 
     if FLAGS.dataset == "2d":
         alr = 0.0045
     elif FLAGS.dataset == "gauss":
         alr = 0.0085
+    elif FLAGS.dataset == "mnist":
+        alr = 0.0065
+        #90 alr = 0.0035
     else:
         # alr = 0.0125
-        alr = 0.0045
+        if FLAGS.rescale == 8:
+            alr = 0.0085
+        else:
+            alr = 0.0045
 # 
     for i in range(1):
         tot_weight = 0
@@ -229,7 +228,7 @@ def main():
 
             alpha_prev = (j-1) / FLAGS.pdist
             alpha_new = j / FLAGS.pdist
-            cweight, x_curr = sess.run([chain_weights, x], {a_prev: alpha_prev, a_new: alpha_new, x_init: x_curr, approx_lr: alr})
+            cweight, x_curr = sess.run([chain_weights, x], {a_prev: alpha_prev, a_new: alpha_new, x_init: x_curr, approx_lr: alr * (5 ** (2.5*-alpha_prev))})
             tot_weight = tot_weight + cweight
 
         print("Total values of lower value based off forward sampling", np.mean(tot_weight), np.std(tot_weight))
@@ -239,7 +238,7 @@ def main():
         for j in tqdm(range(FLAGS.pdist, 0, -1)):
             alpha_new = (j-1) / FLAGS.pdist
             alpha_prev = j / FLAGS.pdist
-            cweight, x_curr = sess.run([chain_weights, x], {a_prev: alpha_prev, a_new: alpha_new, x_init: x_curr, approx_lr: alr})
+            cweight, x_curr = sess.run([chain_weights, x], {a_prev: alpha_prev, a_new: alpha_new, x_init: x_curr, approx_lr: alr * (5 ** (2.5*-alpha_prev))})
             tot_weight = tot_weight - cweight
 
         print("Total values of upper value based off backward sampling", np.mean(tot_weight), np.std(tot_weight))

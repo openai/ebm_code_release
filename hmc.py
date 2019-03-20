@@ -1,6 +1,11 @@
 import tensorflow as tf
 import numpy as np
 
+from tensorflow.python.platform import flags
+flags.DEFINE_bool('proposal_debug', False, 'Print hmc acceptance raes')
+
+FLAGS = flags.FLAGS
+
 def kinetic_energy(velocity):
     """Kinetic energy of the current velocity (assuming a standard Gaussian)
         (x dot x) / 2
@@ -39,7 +44,7 @@ def hamiltonian(position, velocity, energy_function):
     """
     batch_size = tf.shape(velocity)[0]
     kinetic_energy_flat = tf.reshape(kinetic_energy(velocity), (batch_size, -1))
-    return energy_function(position) + tf.reduce_sum(kinetic_energy_flat, axis=[1])
+    return tf.squeeze(energy_function(position)) + tf.reduce_sum(kinetic_energy_flat, axis=[1])
 
 def leapfrog_step(x0,
                   v0,
@@ -60,8 +65,14 @@ def leapfrog_step(x0,
         # Update velocity
         v = v - step_size * gradient
 
+        # x_clip = tf.clip_by_value(x, 0.0, 1.0)
+        # x = x_clip
+        # v_mask = 1 - 2 * tf.abs(tf.sign(x - x_clip))
+        # v = v * v_mask
+
         # Update x
         x = x + step_size * v
+
         # x = tf.clip_by_value(x, -0.01, 1.01)
 
     # x = tf.Print(x, [tf.reduce_min(x), tf.reduce_max(x), tf.reduce_mean(x)])
@@ -107,9 +118,12 @@ def hmc(initial_x,
 
     prob_accept = tf.exp(orig - current)
 
-    # prob_accept = tf.Print(prob_accept, [tf.reduce_mean(tf.clip_by_value(prob_accept, 0, 1))])
+    if FLAGS.proposal_debug:
+        prob_accept = tf.Print(prob_accept, [tf.reduce_mean(tf.clip_by_value(prob_accept, 0, 1))])
+
     uniform = tf.random_uniform(tf.shape(prob_accept))
     keep_mask = (prob_accept > uniform)
+    # print(keep_mask.get_shape())
 
     x_new = tf.where(keep_mask, x, initial_x)
     return x_new

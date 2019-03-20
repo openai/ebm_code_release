@@ -19,17 +19,19 @@ from scipy.linalg import eig
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 
-set_seed(5)
+set_seed(1)
 
 flags.DEFINE_string('datasource', 'random', 'default or noise or negative or single')
 flags.DEFINE_string('dataset', 'cifar10', 'omniglot or imagenet or omniglotfull or cifar10 or mnist or dsprites')
-flags.DEFINE_string('logdir', '/mnt/nfs/yilundu/pot_kmeans/sandbox_cachedir', 'location where log of experiments will be stored')
+flags.DEFINE_string('logdir', '/mnt/nfs/yilundu/ebm_code_release/sandbox_cachedir', 'location where log of experiments will be stored')
 flags.DEFINE_string('task', 'label', 'the task to execute (label: training on the label, anticorrupt: restore salt and pepper noise), boxcorrupt: restore empty portion of image'
                     'or crossclass: change images from one class to another'
                     'or cycleclass: view image change across a label'
                     'or nearestneighbor which returns the nearest images in the test set'
                     'or labelfinetune to train a model accuracy'
                     'or latent to traverse the latent through energy')
+
+flags.DEFINE_bool('hessian', True, 'Whether to use the hessian or the Jacobian for latent traversals')
 
 flags.DEFINE_string('exp', 'default', 'name of experiments')
 flags.DEFINE_integer('data_workers', 5, 'Number of different data workers to load data in parallel')
@@ -508,16 +510,29 @@ def construct_latent(weights, X, Y_GT, model, target_vars):
 
     eps = 0.001
     X_init = X[0:1]
-    e_pos = e_pos_base = model.forward(X_init, weights, label=Y_GT)
-    hessian = tf.hessians(e_pos, X_init)
 
-    hessian = tf.reshape(hessian, (1, 64*64, 64*64))[0]
+    def traversals(model, X, weights, Y_GT):
+        if FLAGS.hessian:
+            e_pos = model.forward(X, weights, label=Y_GT)
+            hessian = tf.hessians(e_pos, X)
+            hessian = tf.reshape(hessian, (1, 64*64, 64*64))[0]
+            e, v = tf.linalg.eigh(hessian)
+        else:
+            latent = model.forward(X, weights, label=Y_GT, return_logit=True)
+            latents = tf.split(latent, 128, axis=1)
+            jacobian = [tf.gradients(latent, X)[0] for latent in latents]
+            jacobian = tf.stack(jacobian, axis=1)
+            jacobian = tf.reshape(jacobian, (tf.shape(jacobian)[1], tf.shape(jacobian)[1], 64*64))
+            s, _, v = tf.linalg.svd(jacobian)
 
-    e, v = tf.linalg.eigh(hessian)
+        return v
 
-    var_scale = 0.1
+
+    var_scale = 1.0
     n = 3
     xs = []
+
+    v = traversals(model, X_init, weights, Y_GT)
 
     for i in range(n):
         var = tf.reshape(v[:, i], (1, 64, 64))
@@ -530,7 +545,7 @@ def construct_latent(weights, X, Y_GT, model, target_vars):
 
     e_pos_hess_modify = model.forward(x_stack, weights, label=Y_GT)
 
-    for i in range(1):
+    for i in range(20):
         x_stack = x_stack + tf.random_normal(tf.shape(x_stack), mean=0.0, stddev=0.005)
         e_pos = model.forward(x_stack, weights, label=Y_GT)
 
@@ -544,10 +559,7 @@ def construct_latent(weights, X, Y_GT, model, target_vars):
     eigs = []
     for j in range(6):
         x_mod = x_mods[j]
-        e_pos = model.forward(x_mod, weights, label=Y_GT)
-        hessian = tf.hessians(e_pos, x_mod)
-        hessian = tf.reshape(hessian, (1, 64*64, 64*64))[0]
-        e, v = tf.linalg.eigh(hessian)
+        v = traversals(model, x_mod, weights, Y_GT)
 
         idx = j // 2
         var = tf.reshape(v[:, idx], (1, 64, 64))
@@ -567,7 +579,7 @@ def construct_latent(weights, X, Y_GT, model, target_vars):
     eigs_stack = tf.stack(eigs, axis=0)
     energys = []
 
-    for i in range(1):
+    for i in range(20):
         x_mods_stack = x_mods_stack + tf.random_normal(tf.shape(x_mods_stack), mean=0.0, stddev=0.005)
         e_pos = model.forward(x_mods_stack, weights, label=Y_GT)
 
@@ -582,37 +594,36 @@ def construct_latent(weights, X, Y_GT, model, target_vars):
     x_refine = x_mods_stack
     es = tf.stack(energys, axis=0)
 
-    target_vars['hessian'] = hessian
-    target_vars['e'] = e
+    # target_vars['hessian'] = hessian
+    # target_vars['e'] = e
     target_vars['v'] = v
     target_vars['x_stack'] = x_stack
     target_vars['x_refine'] = x_refine
     target_vars['es'] = es
-    target_vars['e_base'] = e_pos_base
-    target_vars['e_pos_hessian'] = e_pos_hess_modify
+    # target_vars['e_base'] = e_pos_base
 
 
 def latent(test_dataloader, weights, model, target_vars, sess):
     X = target_vars['X']
     Y_GT = target_vars['Y_GT']
-    hessian = target_vars['hessian']
-    e = target_vars['e']
+    # hessian = target_vars['hessian']
+    # e = target_vars['e']
     v = target_vars['v']
     x_stack = target_vars['x_stack']
     x_refine = target_vars['x_refine']
     es = target_vars['es']
-    e_pos_base = target_vars['e_base']
-    e_pos_hess_modify = target_vars['e_pos_hessian']
+    # e_pos_base = target_vars['e_base']
+    # e_pos_hess_modify = target_vars['e_pos_hessian']
 
     data_corrupt, data, label_gt = iter(test_dataloader).next()
     data = data.numpy()
     x_init = np.tile(data[0:1], (6, 1, 1))
-    x_mod, e_pos, e_pos_hess = sess.run([x_stack, e_pos_base, e_pos_hess_modify], {X: data})
-    print("Value of original starting image: ", e_pos)
-    print("Value of energy of hessian: ", e_pos_hess)
+    x_mod, = sess.run([x_stack], {X: data})
+    # print("Value of original starting image: ", e_pos)
+    # print("Value of energy of hessian: ", e_pos_hess)
     x_mod = x_mod.squeeze()
 
-    n = 5
+    n = 6
     x_mod_list = [x_init, x_mod]
 
     for i in range(n):
@@ -927,7 +938,7 @@ def main():
 
     sess.run(tf.global_variables_initializer())
     saver = loader = tf.train.Saver(max_to_keep=10)
-    savedir = osp.join('/mnt/nfs/yilundu/pot_kmeans/cachedir', FLAGS.exp)
+    savedir = osp.join('/mnt/nfs/yilundu/ebm_code_release/cachedir', FLAGS.exp)
     logdir = osp.join(FLAGS.logdir, FLAGS.exp)
     if not osp.exists(logdir):
         os.makedirs(logdir)
