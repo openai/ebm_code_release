@@ -1,6 +1,6 @@
 # Implicit Generation and Generalization in Energy Based Models
 
-Code for Implicit Generation and Generalization in Energy Based Models. Blog post can be found [here]() and website with pretrained models can be found [here](https://sites.google.com/view/igebm/home).
+Code for [Implicit Generation and Generalization in Energy Based Models](https://s3-us-west-2.amazonaws.com/openai-assets/energy-based-models/ebm_final.pdf). Blog post can be found [here]() and website with pretrained models can be found [here](https://sites.google.com/view/igebm/home).
 
 ## Requirements
 
