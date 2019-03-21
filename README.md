@@ -7,7 +7,7 @@ Code for Implicit Generation and Generalization in Energy Based Models. Blog pos
 To install the prerequisites for the project run 
 ```
 pip install -r requirements.txt
-mkdir sandbox_Cachedir
+mkdir sandbox_cachedir
 ```
 
 Download all saved models and unzip into the folder cachedir
