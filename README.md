@@ -80,6 +80,11 @@ mpiexec -n <worker_num>  <command>
 
 ## Demo
 
+The imagenet_demo.py file contains code to experiments with EBMs on conditional ImageNet 128x128. To run 
+
+```
+python imagenet_demo.py --exp=imagenet128_cond --resume_iter=2238000
+```
 
 The ebm_sandbox.py file contains several different tasks that can evaluate EBMs, by switching the task to different values.
 For example, to visualize cross class mappings in CIFAR-10, you can run
@@ -91,10 +96,14 @@ python ebm_sandbox.py --task=crossclass --num_steps=40 --exp=cifar10_cond --resu
 
 ## Generalization
 
-To test generalization to out of distribution classification run
+To test generalization to out of distribution classification for SVHN (with similar commands for other datasets)
 ```
-python ebm_sandbox.py --task=gentest --num_steps=40 --exp=cifar10_cond --resume_iter=74700
+python ebm_sandbox.py --task=mixenergy --num_steps=40 --exp=cifar10_large_model_uncond --resume_iter=121200 --large_model --svhnmix
 ```
+
+To test classification under either L2 or Li perturbations
+
+
 
 
 
@@ -103,7 +112,7 @@ python ebm_sandbox.py --task=gentest --num_steps=40 --exp=cifar10_cond --resume_
 To train each of conditional dsprites dataset, choose either cond_pos, cond_rot, cond_shape, cond_scale.
 
 ```
-python train.py --dataset=dsprites --zero_kl --num_steps=20 --step_lr=500.0 --swish_act  --cond_pos --replay_batch
+python train.py --dataset=dsprites --exp=dsprites_cond_pos --zero_kl --num_steps=20 --step_lr=500.0 --swish_act  --cond_pos --replay_batch -cclass
 ```
 
 Once models are trained, they can be sampled from jointly by running
