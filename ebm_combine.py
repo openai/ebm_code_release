@@ -25,7 +25,6 @@ flags.DEFINE_bool('proj_cclass', False, 'use for backwards compatibility reasons
 flags.DEFINE_bool('spec_norm', True, 'Whether to use spectral normalization on weights')
 flags.DEFINE_bool('use_bias', True, 'Whether to use bias in convolution')
 flags.DEFINE_bool('use_attention', False, 'Whether to use self attention in network')
-flags.DEFINE_bool('hack', False, 'Use of hack network for dsprites')
 flags.DEFINE_bool('plot_curve', False, 'Generate a curve of results')
 flags.DEFINE_integer('num_steps', 20, 'number of steps to optimize the label')
 flags.DEFINE_string('task', 'conceptcombine', 'conceptcombine, labeldiscover, gentest, genbaseline, etc.')
