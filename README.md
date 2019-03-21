@@ -1,4 +1,4 @@
-# EBM
+# Implicit Generation and Generalization in Energy Based Models
 
 Code for Implicit Generation and Generalization in Energy Based Models. Blog post can be found [here]() and website with pretrained models can be found [here](https://sites.google.com/view/igebm/home)
 
@@ -53,7 +53,7 @@ To train on different datasets:
 For CIFAR-10 Unconditional
 
 ```
-python train.py --exp=cifar10_uncond --dataset=cifar10 --num_steps=60 --batch_size=128 --step_lr=10.0 --proj_norm=0.01 --zero_kl --replay_batch --large_network
+python train.py --exp=cifar10_uncond --dataset=cifar10 --num_steps=60 --batch_size=128 --step_lr=10.0 --proj_norm=0.01 --zero_kl --replay_batch --large_model
 ```
 
 For CIFAR-10 Conditional
@@ -74,7 +74,7 @@ For ImageNet 128x128 Conditional
 python train.py --exp=imagenet_cond --num_steps=50 --batch_size=16 step_lr=100.0 --replay_batch --swish_act --cclass --zero_kl --dataset=imagenetfull --imagenet_datadir=<full imagenet path>
 ```
 
-All code supports horovod execution, so model training can be speeded up substantially by using multiple different workers by running each command.
+All code supports horovod execution, so model training can be increased substantially by using multiple different workers by running each command.
 ```
 mpiexec -n <worker_num>  <command>
 ```
