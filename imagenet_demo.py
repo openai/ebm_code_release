@@ -6,7 +6,7 @@ import tensorflow as tf
 import imageio
 
 
-flags.DEFINE_string('logdir', '/mnt/nfs/yilundu/ebm_code_release/cachedir', 'location where log of experiments will be stored')
+flags.DEFINE_string('logdir', '../cachedir', 'location where log of experiments will be stored')
 flags.DEFINE_integer('num_steps', 200, 'num of steps for conditional imagenet sampling')
 flags.DEFINE_float('step_lr', 170., 'number of steps to run')
 flags.DEFINE_integer('batch_size', 16, 'number of steps to run')
@@ -63,9 +63,10 @@ if __name__ == "__main__":
     model_file = osp.join(logdir, 'model_{}'.format(FLAGS.resume_iter))
     saver.restore(sess, model_file)
 
-    # lx = list(range(16))
-    lx = [0, 14, 37, 145, 108, 963, 242, 624, 238, 323, 527, 748, 985, 973, 974, 979]
+    ls = np.random.permutation(1000)[:16]
     ims = []
+
+    # What to initialize sampling with. 
     x_mod = np.random.uniform(0, 1, size=(FLAGS.batch_size, 128, 128, 3))
     labels = np.eye(1000)[lx]
 

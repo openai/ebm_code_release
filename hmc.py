@@ -97,8 +97,8 @@ def hmc(initial_x,
         Step-size in Hamiltonian simulation
     num_steps : int
         Number of steps to take in Hamiltonian simulation
-    log_posterior : str
-        Log posterior (unnormalized) for the target distribution
+    neg_log_posterior : str
+        Negative log posterior (unnormalized) for the target distribution
 
     Returns
     -------

@@ -15,8 +15,8 @@ from custom_adam import AdamOptimizer
 
 flags.DEFINE_integer('batch_size', 256, 'Size of inputs')
 flags.DEFINE_integer('data_workers', 4, 'Number of workers to do things')
-flags.DEFINE_string('logdir', '/mnt/nfs/yilundu/ebm_code_release/cachedir', 'directory for logging')
-flags.DEFINE_string('savedir', '/mnt/nfs/yilundu/ebm_code_release/cachedir', 'location where log of experiments will be stored')
+flags.DEFINE_string('logdir', 'cachedir', 'directory for logging')
+flags.DEFINE_string('savedir', 'cachedir', 'location where log of experiments will be stored')
 flags.DEFINE_integer('num_filters', 64, 'number of filters for conv nets -- 32 for miniimagenet, 64 for omniglot.')
 flags.DEFINE_float('step_lr', 500, 'size of gradient descent size')
 flags.DEFINE_string('dsprites_path', '/root/data/dsprites-dataset/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz', 'path to dsprites characters')
@@ -52,40 +52,6 @@ flags.DEFINE_integer('break_steps', 300, 'steps to break')
 flags.DEFINE_bool('train', False, 'whether to train on generalization into multiple different predictions')
 
 FLAGS = flags.FLAGS
-
-if FLAGS.task == 'gentest' or FLAGS.task == 'genbaseline':
-    # For conditioning on large shapes
-    # FLAGS.exp_pos = "dpos_only_1_12_new"
-    # FLAGS.resume_pos = 3000
-
-    # For conditioning on small shapes that are orientated
-    # FLAGS.exp_pos = "dpsrites_dpos_only_107"
-    # FLAGS.resume_pos = 4000
-    # FLAGS.exp_size = 'dpsrites_dsize_only_107'
-    # FLAGS.resume_size = 1000
-
-    # For conditioning on small shapes that are not orientated
-    FLAGS.exp_pos = "dpos_only_1_16_replay_batch_2"
-    FLAGS.resume_pos = 4000
-
-    # Super strong model
-    # FLAGS.exp_size = "dscale_only_1_16_replay_batch"
-    # FLAGS.resume_size = 10000
-
-    FLAGS.exp_size = "dscale_only_1_17_replay_batch_2"
-    FLAGS.resume_size = 4000
-
-    # FLAGS.exp_size = "dscale_only_1_16_replay_batch"
-    # FLAGS.resume_size = 10000
-
-    FLAGS.exp_shape = "dshape_only_1_19_replay_batch"
-    FLAGS.resume_shape = 20000
-    FLAGS.exp_rot = "drot_only_1_16_replay_batch"
-    FLAGS.resume_rot = 7000
-    FLAGS.step_lr = 500
-    FLAGS.cond_shape = True
-    FLAGS.cond_rot = True
-
 
 class DSpritesGen(Dataset):
     def __init__(self, data, latents, frac=0.0):

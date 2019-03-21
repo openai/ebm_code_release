@@ -18,7 +18,7 @@ hvd.init()
 from inception import get_inception_score
 from fid import get_fid_score
 
-flags.DEFINE_string('logdir', '/mnt/nfs/yilundu/ebm_code_release/cachedir', 'location where log of experiments will be stored')
+flags.DEFINE_string('logdir', 'cachedir', 'location where log of experiments will be stored')
 flags.DEFINE_string('exp', 'default', 'name of experiments')
 flags.DEFINE_bool('cclass', False, 'whether to condition on class')
 
@@ -216,7 +216,7 @@ def compute_inception(sess, target_vars):
 
         images.extend(list(ims))
 
-    saveim = osp.join('/mnt/nfs/yilundu/ebm_code_release/sandbox_cachedir', FLAGS.exp, "test{}.png".format(FLAGS.idx))
+    saveim = osp.join('sandbox_cachedir', FLAGS.exp, "test{}.png".format(FLAGS.idx))
 
     ims = ims[:100]
 

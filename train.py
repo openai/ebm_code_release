@@ -48,12 +48,12 @@ flags.DEFINE_integer('data_workers', 4,
     'Number of different data workers to load data in parallel')
 
 # General Experiment Settings
-flags.DEFINE_string('logdir', '/mnt/nfs/yilundu/ebm_code_release/cachedir',
+flags.DEFINE_string('logdir', 'cachedir',
     'location where log of experiments will be stored')
 flags.DEFINE_string('exp', 'default', 'name of experiments')
 flags.DEFINE_integer('log_interval', 10, 'log outputs every so many batches')
-flags.DEFINE_integer('save_interval', 2000,'save outputs every so many batches')
-flags.DEFINE_integer('test_interval', 2000,'evaluate outputs every so many batches')
+flags.DEFINE_integer('save_interval', 1000,'save outputs every so many batches')
+flags.DEFINE_integer('test_interval', 1000,'evaluate outputs every so many batches')
 flags.DEFINE_integer('resume_iter', -1, 'iteration to resume training from')
 flags.DEFINE_bool('train', True, 'whether to train or test')
 flags.DEFINE_integer('epoch_num', 10000, 'Number of Epochs to train on')
