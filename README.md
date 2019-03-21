@@ -9,7 +9,7 @@ To install the prerequisites for the project run
 pip install -r requirements.txt
 ```
 
-Download all saved models in the folder <>
+Download all saved models in the folder cachedir
 
 ## Download Datasets
 
@@ -81,21 +81,36 @@ mpiexec -n <worker_num>  <command>
 ## Demo
 
 
+The ebm_sandbox.py file contains several different tasks that can evaluate EBMs, by switching the task to different values.
+For example, to visualize cross class mappings in CIFAR-10, you can run
+
+```
+python ebm_sandbox.py --task=crossclass --num_steps=40 --exp=cifar10_cond --resume_iter=74700
+```
 
 
 ## Generalization
 
 To test generalization to out of distribution classification run
 ```
-Code
+python ebm_sandbox.py --task=gentest --num_steps=40 --exp=cifar10_cond --resume_iter=74700
 ```
+
+
 
 ## Concept Combination
 
+To train each of conditional dsprites dataset, choose either cond_pos, cond_rot, cond_shape, cond_scale.
 
 ```
-python train.py
+python train.py --dataset=dsprites --zero_kl --num_steps=20 --step_lr=500.0 --swish_act  --cond_pos --replay_batch
 ```
-Models are combined in ebm_sandbox.py
 
-To test out of distribution generalization test.
+Once models are trained, they can be sampled from jointly by running
+
+```
+python ebm_combine.py --exp_size=<exp_size> --exp_shape=<exp_shape> --exp_pos=<exp_pos> --exp_rot=<exp_rot> --resume_size=<resume_size> --resume_shape=<resume_shape> --resume_rot=<resume_rot> --resume_pos=<resume_pos>
+```
+
+
+
