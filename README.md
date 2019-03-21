@@ -7,9 +7,10 @@ Code for Implicit Generation and Generalization in Energy Based Models. Blog pos
 To install the prerequisites for the project run 
 ```
 pip install -r requirements.txt
+mkdir sandbox_Cachedir
 ```
 
-Download all saved models in the folder cachedir
+Download all saved models and unzip into the folder cachedir
 
 ## Download Datasets
 
@@ -80,14 +81,14 @@ mpiexec -n <worker_num>  <command>
 
 ## Demo
 
-The imagenet_demo.py file contains code to experiments with EBMs on conditional ImageNet 128x128. To run 
+The imagenet_demo.py file contains code to experiments with EBMs on conditional ImageNet 128x128. To generate a gif on sampling, you can run the command:
 
 ```
 python imagenet_demo.py --exp=imagenet128_cond --resume_iter=2238000
 ```
 
 The ebm_sandbox.py file contains several different tasks that can evaluate EBMs, by switching the task to different values.
-For example, to visualize cross class mappings in CIFAR-10, you can run
+For example, to visualize cross class mappings in CIFAR-10, you can run:
 
 ```
 python ebm_sandbox.py --task=crossclass --num_steps=40 --exp=cifar10_cond --resume_iter=74700
@@ -98,13 +99,13 @@ python ebm_sandbox.py --task=crossclass --num_steps=40 --exp=cifar10_cond --resu
 
 To test generalization to out of distribution classification for SVHN (with similar commands for other datasets)
 ```
-python ebm_sandbox.py --task=mixenergy --num_steps=40 --exp=cifar10_large_model_uncond --resume_iter=121200 --large_model --svhnmix
+python ebm_sandbox.py --task=mixenergy --num_steps=40 --exp=cifar10_large_model_uncond --resume_iter=121200 --large_model --svhnmix --cclass=False
 ```
 
 To test classification under either L2 or Li perturbations
-
-
-
+```
+python ebm_sandbox.py --task=label --exp=cifar10_wider_model_cond --resume_iter=21600 --lnorm=-1 --pgd=<number of pgd steps> --num_steps=10 --lival=<li bound value> --wider_model
+```
 
 
 ## Concept Combination
