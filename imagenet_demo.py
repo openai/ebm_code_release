@@ -8,8 +8,8 @@ from utils import optimistic_restore
 
 
 flags.DEFINE_string('logdir', 'cachedir', 'location where log of experiments will be stored')
-flags.DEFINE_integer('num_steps', 100, 'num of steps for conditional imagenet sampling')
-flags.DEFINE_float('step_lr', 100., 'step size for Langevin dynamics')
+flags.DEFINE_integer('num_steps', 200, 'num of steps for conditional imagenet sampling')
+flags.DEFINE_float('step_lr', 180., 'step size for Langevin dynamics')
 flags.DEFINE_integer('batch_size', 16, 'number of steps to run')
 flags.DEFINE_string('exp', 'default', 'name of experiments')
 flags.DEFINE_integer('resume_iter', -1, 'iteration to resume training from')
