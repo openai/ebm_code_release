@@ -84,7 +84,7 @@ mpiexec -n <worker_num>  <command>
 The imagenet_demo.py file contains code to experiments with EBMs on conditional ImageNet 128x128. To generate a gif on sampling, you can run the command:
 
 ```
-python imagenet_demo.py --exp=imagenet128_cond --resume_iter=2238000
+python imagenet_demo.py --exp=imagenet128_cond --resume_iter=2238000 --swish_act
 ```
 
 The ebm_sandbox.py file contains several different tasks that can evaluate EBMs, by switching the task to different values.

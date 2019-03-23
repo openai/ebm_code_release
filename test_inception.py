@@ -187,6 +187,8 @@ def compute_inception(sess, target_vars):
                 x_init = np.random.uniform(0, 1, (FLAGS.batch_size, n, n, 3))
                 label = np.random.randint(0, classes, (FLAGS.batch_size))
                 label = identity[label]
+                print(label[0])
+                assert False
                 x_new = sess.run([x_final], {X_START:x_init, Y_GT:label, NOISE_SCALE: noise_scale})[0]
                 data_buffer.add(x_new, label)
             else:
