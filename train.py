@@ -287,123 +287,123 @@ def train(target_vars, saver, sess, logger, dataloader, resume_iter, logdir):
                 if hvd.rank() == 0:
                     print(string)
                     logger.writekvs(kvs)
-                else:
-                    _, x_mod = sess.run(output, feed_dict)
+            else:
+                _, x_mod = sess.run(output, feed_dict)
 
-                if itr % FLAGS.save_interval == 0 and hvd.rank() == 0:
+            if itr % FLAGS.save_interval == 0 and hvd.rank() == 0:
+                saver.save(
+                    sess,
+                    osp.join(
+                        FLAGS.logdir,
+                        FLAGS.exp,
+                        'model_{}'.format(itr)))
+
+            if itr % FLAGS.test_interval == 0 and hvd.rank() == 0 and FLAGS.dataset != '2d':
+                try_im = x_mod
+                orig_im = data_corrupt.squeeze()
+                actual_im = rescale_im(data)
+
+                orig_im = rescale_im(orig_im)
+                try_im = rescale_im(try_im).squeeze()
+
+                for i, (im, t_im, actual_im_i) in enumerate(
+                        zip(orig_im[:20], try_im[:20], actual_im)):
+                    shape = orig_im.shape[1:]
+                    new_im = np.zeros((shape[0], shape[1] * 3, *shape[2:]))
+                    size = shape[1]
+                    new_im[:, :size] = im
+                    new_im[:, size:2 * size] = t_im
+                    new_im[:, 2 * size:] = actual_im_i
+
+                    log_image(
+                        new_im, logger, 'train_gen_{}'.format(itr), step=i)
+
+                test_im = x_mod
+
+                try:
+                    data_corrupt, data, label = next(dataloader_iterator)
+                except BaseException:
+                    dataloader_iterator = iter(dataloader)
+                    data_corrupt, data, label = next(dataloader_iterator)
+
+                data_corrupt = data_corrupt.numpy()
+
+                if FLAGS.replay_batch and (
+                        x_mod is not None) and len(replay_buffer) > 0:
+                    replay_batch = replay_buffer.sample(FLAGS.batch_size)
+                    replay_batch = decompress_x_mod(replay_batch)
+                    replay_mask = (
+                        np.random.uniform(
+                            0, 1, (FLAGS.batch_size)) > 0.05)
+                    data_corrupt[replay_mask] = replay_batch[replay_mask]
+
+                if FLAGS.dataset == 'cifar10' or FLAGS.dataset == 'imagenet' or FLAGS.dataset == 'imagenetfull':
+                    n = 128
+
+                    if FLAGS.dataset == "imagenetfull":
+                        n = 32
+
+                    if len(replay_buffer) > n:
+                        data_corrupt = decompress_x_mod(replay_buffer.sample(n))
+                    elif FLAGS.dataset == 'imagenetfull':
+                        data_corrupt = np.random.uniform(
+                            0, FLAGS.rescale, (n, 128, 128, 3))
+                    else:
+                        data_corrupt = np.random.uniform(
+                            0, FLAGS.rescale, (n, 32, 32, 3))
+
+                    if FLAGS.dataset == 'cifar10':
+                        label = np.eye(10)[np.random.randint(0, 10, (n))]
+                    else:
+                        label = np.eye(1000)[
+                            np.random.randint(
+                                0, 1000, (n))]
+
+                feed_dict[X_NOISE] = data_corrupt
+
+                feed_dict[X] = data
+
+                if FLAGS.cclass:
+                    feed_dict[LABEL] = label
+
+                test_x_mod = sess.run(val_output, feed_dict)
+
+                try_im = test_x_mod
+                orig_im = data_corrupt.squeeze()
+                actual_im = rescale_im(data.numpy())
+
+                orig_im = rescale_im(orig_im)
+                try_im = rescale_im(try_im).squeeze()
+
+                for i, (im, t_im, actual_im_i) in enumerate(
+                        zip(orig_im[:20], try_im[:20], actual_im)):
+
+                    shape = orig_im.shape[1:]
+                    new_im = np.zeros((shape[0], shape[1] * 3, *shape[2:]))
+                    size = shape[1]
+                    new_im[:, :size] = im
+                    new_im[:, size:2 * size] = t_im
+                    new_im[:, 2 * size:] = actual_im_i
+                    log_image(
+                        new_im, logger, 'val_gen_{}'.format(itr), step=i)
+
+                score, std = get_inception_score(list(try_im), splits=1)
+                print(
+                    "Inception score of {} with std of {}".format(
+                        score, std))
+                kvs = {}
+                kvs['inception_score'] = score
+                kvs['inception_score_std'] = std
+                logger.writekvs(kvs)
+
+                if score > best_inception:
+                    best_inception = score
                     saver.save(
                         sess,
                         osp.join(
                             FLAGS.logdir,
                             FLAGS.exp,
-                            'model_{}'.format(itr)))
-
-                if itr % FLAGS.test_interval == 0 and hvd.rank() == 0 and FLAGS.dataset != '2d':
-                    try_im = x_mod
-                    orig_im = data_corrupt.squeeze()
-                    actual_im = rescale_im(data)
-
-                    orig_im = rescale_im(orig_im)
-                    try_im = rescale_im(try_im).squeeze()
-
-                    for i, (im, t_im, actual_im_i) in enumerate(
-                            zip(orig_im[:20], try_im[:20], actual_im)):
-                        shape = orig_im.shape[1:]
-                        new_im = np.zeros((shape[0], shape[1] * 3, *shape[2:]))
-                        size = shape[1]
-                        new_im[:, :size] = im
-                        new_im[:, size:2 * size] = t_im
-                        new_im[:, 2 * size:] = actual_im_i
-
-                        log_image(
-                            new_im, logger, 'train_gen_{}'.format(itr), step=i)
-
-                    test_im = x_mod
-
-                    try:
-                        data_corrupt, data, label = next(dataloader_iterator)
-                    except BaseException:
-                        dataloader_iterator = iter(dataloader)
-                        data_corrupt, data, label = next(dataloader_iterator)
-
-                    data_corrupt = data_corrupt.numpy()
-
-                    if FLAGS.replay_batch and (
-                            x_mod is not None) and len(replay_buffer) > 0:
-                        replay_batch = replay_buffer.sample(FLAGS.batch_size)
-                        replay_batch = decompress_x_mod(replay_batch)
-                        replay_mask = (
-                            np.random.uniform(
-                                0, 1, (FLAGS.batch_size)) > 0.05)
-                        data_corrupt[replay_mask] = replay_batch[replay_mask]
-
-                    if FLAGS.dataset == 'cifar10' or FLAGS.dataset == 'imagenet' or FLAGS.dataset == 'imagenetfull':
-                        n = 128
-
-                        if FLAGS.dataset == "imagenetfull":
-                            n = 32
-
-                        if len(replay_buffer) > n:
-                            data_corrupt = decompress_x_mod(replay_buffer.sample(n))
-                        elif FLAGS.dataset == 'imagenetfull':
-                            data_corrupt = np.random.uniform(
-                                0, FLAGS.rescale, (n, 128, 128, 3))
-                        else:
-                            data_corrupt = np.random.uniform(
-                                0, FLAGS.rescale, (n, 32, 32, 3))
-
-                        if FLAGS.dataset == 'cifar10':
-                            label = np.eye(10)[np.random.randint(0, 10, (n))]
-                        else:
-                            label = np.eye(1000)[
-                                np.random.randint(
-                                    0, 1000, (n))]
-
-                    feed_dict[X_NOISE] = data_corrupt
-
-                    feed_dict[X] = data
-
-                    if FLAGS.cclass:
-                        feed_dict[LABEL] = label
-
-                    test_x_mod = sess.run(val_output, feed_dict)
-
-                    try_im = test_x_mod
-                    orig_im = data_corrupt.squeeze()
-                    actual_im = rescale_im(data.numpy())
-
-                    orig_im = rescale_im(orig_im)
-                    try_im = rescale_im(try_im).squeeze()
-
-                    for i, (im, t_im, actual_im_i) in enumerate(
-                            zip(orig_im[:20], try_im[:20], actual_im)):
-
-                        shape = orig_im.shape[1:]
-                        new_im = np.zeros((shape[0], shape[1] * 3, *shape[2:]))
-                        size = shape[1]
-                        new_im[:, :size] = im
-                        new_im[:, size:2 * size] = t_im
-                        new_im[:, 2 * size:] = actual_im_i
-                        log_image(
-                            new_im, logger, 'val_gen_{}'.format(itr), step=i)
-
-                    score, std = get_inception_score(list(try_im), splits=1)
-                    print(
-                        "Inception score of {} with std of {}".format(
-                            score, std))
-                    kvs = {}
-                    kvs['inception_score'] = score
-                    kvs['inception_score_std'] = std
-                    logger.writekvs(kvs)
-
-                    if score > best_inception:
-                        best_inception = score
-                        saver.save(
-                            sess,
-                            osp.join(
-                                FLAGS.logdir,
-                                FLAGS.exp,
-                                'model_best'))
+                            'model_best'))
 
             if itr > 60000 and FLAGS.dataset == "mnist":
                 assert False
