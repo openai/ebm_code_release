@@ -21,22 +21,22 @@ For ImageNet 128x128 dataset, download the TFRecords of the Imagenet dataset by 
 ```
 for i in $(seq -f "%05g" 0 1023)
 do
-  wget https://storage.googleapis.com/ebm_demo/data/imagenet/train-$i-of-01024
+  wget https://[deprecated]/data/imagenet/train-$i-of-01024
 done
 
 for i in $(seq -f "%05g" 0 127)
 do
-  wget https://storage.googleapis.com/ebm_demo/data/imagenet/validation-$i-of-00128
+  wget https://[deprecated]/data/imagenet/validation-$i-of-00128
 done
 
-wget https://storage.googleapis.com/ebm_demo/data/imagenet/index.json
+wget https://[deprecated]/data/imagenet/index.json
 ```
 
 For Imagenet 32x32 dataset, download the Imagenet 32x32 dataset and unzip by running the following command
 
 ```
-wget https://storage.googleapis.com/ebm_demo/data/imagenet32/Imagenet32_train.zip
-wget https://storage.googleapis.com/ebm_demo/data/imagenet32/Imagenet32_val.zip
+wget https://[deprecated]/data/imagenet32/Imagenet32_train.zip
+wget https://[deprecated]/data/imagenet32/Imagenet32_val.zip
 ```
 
 For dSprites dataset, download the dataset by running
